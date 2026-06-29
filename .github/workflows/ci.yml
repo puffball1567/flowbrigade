@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Nim ${{ matrix.nim-version }}
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      memcached:
+        image: memcached:1.6
+        ports:
+          - 11211:11211
+
+    strategy:
+      fail-fast: false
+      matrix:
+        nim-version:
+          - "2.2.0"
+          - "stable"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: ${{ matrix.nim-version }}
+
+      - name: Check package
+        run: nimble check
+
+      - name: Check public entry point
+        run: nim check -p:src src/flowbrigade.nim
+
+      - name: Check examples
+        run: |
+          for file in examples/*.nim; do
+            nim check -p:src "$file"
+          done
+
+      - name: Check snippets and recipes
+        run: nimble snippets
+
+      - name: Run tests
+        run: nim r -p:src tests/all.nim
+
+      - name: Run Redis adapter unit tests
+        run: nim r -p:packages/flowbrigade_redis/src -p:src packages/flowbrigade_redis/tests/test_flowbrigade_redis.nim
+
+      - name: Install ready bridge dependency
+        run: nimble install -y ready
+
+      - name: Run ready bridge unit tests
+        run: nim r -p:packages/flowbrigade_ready/src -p:packages/flowbrigade_redis/src -p:src packages/flowbrigade_ready/tests/test_flowbrigade_ready.nim
+
+      - name: Check ready recipe
+        run: nim check -p:packages/flowbrigade_ready/src -p:packages/flowbrigade_redis/src -p:src recipes/redis_distributed_limit.nim
+
+      - name: Run Memcached adapter unit tests
+        run: nim r -p:packages/flowbrigade_memcached/src -p:src packages/flowbrigade_memcached/tests/test_flowbrigade_memcached.nim
+
+      - name: Run Memcached adapter integration tests
+        env:
+          FLOWBRIGADE_MEMCACHED_HOST: 127.0.0.1
+          FLOWBRIGADE_MEMCACHED_PORT: "11211"
+        run: nim r -p:packages/flowbrigade_memcached/src -p:src packages/flowbrigade_memcached/tests/test_flowbrigade_memcached_integration.nim
+
+      - name: Install Redis tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-tools
+
+      - name: Run Redis adapter integration tests
+        env:
+          FLOWBRIGADE_REDIS_HOST: 127.0.0.1
+          FLOWBRIGADE_REDIS_PORT: "6379"
+        run: nim r -p:packages/flowbrigade_redis/src -p:src packages/flowbrigade_redis/tests/test_flowbrigade_redis_integration.nim
+
+      - name: Run ready bridge integration tests
+        env:
+          FLOWBRIGADE_REDIS_HOST: 127.0.0.1
+          FLOWBRIGADE_REDIS_PORT: "6379"
+        run: nim r -p:packages/flowbrigade_ready/src -p:packages/flowbrigade_redis/src -p:src packages/flowbrigade_ready/tests/test_flowbrigade_ready_integration.nim
+
+      - name: Build docs
+        run: nim doc -p:src --outdir:docs-out src/flowbrigade.nim
