@@ -19,6 +19,14 @@ FLOWBRIGADE_REDIS_HOST=127.0.0.1 FLOWBRIGADE_REDIS_PORT=6380 nim r -p:packages/f
 redis-cli -h 127.0.0.1 -p 6380 SHUTDOWN NOSAVE
 ```
 
+Docker is also fine when the container publishes a local port:
+
+```sh
+docker run --rm -d --name flowbrigade-redis -p 6380:6379 redis:7-alpine
+FLOWBRIGADE_REDIS_HOST=127.0.0.1 FLOWBRIGADE_REDIS_PORT=6380 nimble benchmarkRedis
+docker stop flowbrigade-redis
+```
+
 Start Redis for a local integration run:
 
 ```sh

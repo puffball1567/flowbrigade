@@ -28,6 +28,16 @@ dominates per-request cost.
 Use Redis-backed limiters when state must be shared across processes. For
 single-process tools, in-memory limiters avoid network cost.
 
+For localhost or Docker Redis checks, run the optional real-server benchmark:
+
+```sh
+FLOWBRIGADE_REDIS_HOST=127.0.0.1 FLOWBRIGADE_REDIS_PORT=6379 nimble benchmarkRedis
+```
+
+Set `FLOWBRIGADE_REDIS_BENCH_ITERATIONS` to adjust the iteration count. This
+benchmark uses a persistent TCP socket and Redis RESP directly so it measures
+Redis round trips rather than `redis-cli` process startup time.
+
 ## Benchmark smoke tests
 
 A small benchmark smoke suite lives in `benchmarks/core_bench.nim` and
@@ -49,7 +59,5 @@ Before publishing a larger release, add repeatable benchmarks for:
 - keyed limiter behavior near `maxKeys`
 - stored fixed-window in-memory adapter throughput
 - Redis fixed-window `consume` latency against a real server
-- Redis token-bucket and keyed token-bucket `consume` latency against a real
-  server
 
 Benchmarks should run separately from unit tests so CI remains fast.
