@@ -119,9 +119,11 @@ typedef struct fb_rate_limit_storage {
 typedef void* fb_backoff_policy;
 typedef void* fb_token_bucket;
 typedef void* fb_fixed_window;
+typedef void* fb_keyed_fixed_window;
 typedef void* fb_sliding_window;
 typedef void* fb_circuit_breaker;
 typedef void* fb_bulkhead;
+typedef void* fb_keyed_bulkhead;
 typedef void* fb_timeout;
 typedef void* fb_deadline;
 typedef void* fb_budget_ledger;
@@ -155,16 +157,41 @@ int32_t fb_token_bucket_create(int32_t rate, int64_t per_ns, int32_t burst, fb_t
 void fb_token_bucket_destroy(fb_token_bucket handle);
 int32_t fb_token_bucket_inspect(fb_token_bucket handle, int32_t cost, fb_rate_limit_result* out_result);
 int32_t fb_token_bucket_consume(fb_token_bucket handle, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_token_bucket_reset(fb_token_bucket handle);
+int32_t fb_token_bucket_configured_rate(fb_token_bucket handle, int32_t* out_rate);
+int32_t fb_token_bucket_configured_period(fb_token_bucket handle, int64_t* out_period_ns);
+int32_t fb_token_bucket_configured_burst(fb_token_bucket handle, int32_t* out_burst);
+int32_t fb_token_bucket_available_tokens(fb_token_bucket handle, int32_t* out_tokens);
 
 int32_t fb_fixed_window_create(int32_t limit, int64_t per_ns, fb_fixed_window* out_handle);
 void fb_fixed_window_destroy(fb_fixed_window handle);
 int32_t fb_fixed_window_inspect(fb_fixed_window handle, int32_t cost, fb_rate_limit_result* out_result);
 int32_t fb_fixed_window_consume(fb_fixed_window handle, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_fixed_window_reset(fb_fixed_window handle);
+int32_t fb_fixed_window_configured_limit(fb_fixed_window handle, int32_t* out_limit);
+int32_t fb_fixed_window_configured_period(fb_fixed_window handle, int64_t* out_period_ns);
+int32_t fb_fixed_window_in_use(fb_fixed_window handle, int32_t* out_in_use);
+
+int32_t fb_keyed_fixed_window_create(int32_t limit, int64_t per_ns, int32_t max_keys, fb_keyed_fixed_window* out_handle);
+void fb_keyed_fixed_window_destroy(fb_keyed_fixed_window handle);
+int32_t fb_keyed_fixed_window_inspect(fb_keyed_fixed_window handle, const char* key, size_t key_len, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_keyed_fixed_window_consume(fb_keyed_fixed_window handle, const char* key, size_t key_len, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_keyed_fixed_window_clear(fb_keyed_fixed_window handle, const char* key, size_t key_len, int32_t* out_cleared);
+int32_t fb_keyed_fixed_window_reset(fb_keyed_fixed_window handle, const char* key, size_t key_len, int32_t* out_reset);
+int32_t fb_keyed_fixed_window_reset_all(fb_keyed_fixed_window handle, int32_t* out_removed);
+int32_t fb_keyed_fixed_window_active_keys(fb_keyed_fixed_window handle, int32_t* out_count);
+int32_t fb_keyed_fixed_window_configured_limit(fb_keyed_fixed_window handle, int32_t* out_limit);
+int32_t fb_keyed_fixed_window_configured_period(fb_keyed_fixed_window handle, int64_t* out_period_ns);
+int32_t fb_keyed_fixed_window_key_capacity(fb_keyed_fixed_window handle, int32_t* out_capacity);
 
 int32_t fb_sliding_window_create(int32_t limit, int64_t per_ns, fb_sliding_window* out_handle);
 void fb_sliding_window_destroy(fb_sliding_window handle);
 int32_t fb_sliding_window_inspect(fb_sliding_window handle, int32_t cost, fb_rate_limit_result* out_result);
 int32_t fb_sliding_window_consume(fb_sliding_window handle, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_sliding_window_reset(fb_sliding_window handle);
+int32_t fb_sliding_window_configured_limit(fb_sliding_window handle, int32_t* out_limit);
+int32_t fb_sliding_window_configured_period(fb_sliding_window handle, int64_t* out_period_ns);
+int32_t fb_sliding_window_current_use(fb_sliding_window handle, int32_t* out_in_use);
 
 int32_t fb_circuit_breaker_create(int32_t failure_threshold, int64_t reset_after_ns, fb_circuit_breaker* out_handle);
 void fb_circuit_breaker_destroy(fb_circuit_breaker handle);
@@ -178,6 +205,14 @@ void fb_bulkhead_destroy(fb_bulkhead handle);
 int32_t fb_bulkhead_inspect(fb_bulkhead handle, fb_bulkhead_result* out_result);
 int32_t fb_bulkhead_acquire(fb_bulkhead handle, fb_bulkhead_result* out_result);
 int32_t fb_bulkhead_release(fb_bulkhead handle);
+
+int32_t fb_keyed_bulkhead_create(int32_t capacity, int32_t max_keys, fb_keyed_bulkhead* out_handle);
+void fb_keyed_bulkhead_destroy(fb_keyed_bulkhead handle);
+int32_t fb_keyed_bulkhead_inspect(fb_keyed_bulkhead handle, const char* key, size_t key_len, fb_bulkhead_result* out_result);
+int32_t fb_keyed_bulkhead_acquire(fb_keyed_bulkhead handle, const char* key, size_t key_len, fb_bulkhead_result* out_result);
+int32_t fb_keyed_bulkhead_release(fb_keyed_bulkhead handle, const char* key, size_t key_len);
+int32_t fb_keyed_bulkhead_clear(fb_keyed_bulkhead handle, const char* key, size_t key_len, int32_t* out_cleared);
+int32_t fb_keyed_bulkhead_active_keys(fb_keyed_bulkhead handle, int32_t* out_count);
 
 int32_t fb_timeout_create(int64_t after_ns, fb_timeout* out_handle);
 void fb_timeout_destroy(fb_timeout handle);

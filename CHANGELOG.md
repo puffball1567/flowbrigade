@@ -88,4 +88,6 @@ work so the first public release has a clear history.
   callbacks, fallback callback runner, named limiter registry handles,
   callback-backed stored fixed windows, result metric export helpers, and a C
   smoke example.
+- Expanded the C ABI with keyed fixed-window handles, keyed bulkhead handles,
+  local limiter management helpers, and an ARC default build task.
 - Added language-neutral specification notes for portable FlowBrigade ports.

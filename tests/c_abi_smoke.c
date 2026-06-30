@@ -100,8 +100,10 @@ static int32_t storage_clear(void* user_data, const char* key, size_t key_len, i
 int main(void) {
   int64_t nanos = 0;
   fb_token_bucket bucket = 0;
+  fb_keyed_fixed_window keyed_window = 0;
   fb_backoff_policy backoff = 0;
   fb_bulkhead bulkhead = 0;
+  fb_keyed_bulkhead keyed_bulkhead = 0;
   fb_timeout timeout = 0;
   fb_budget_ledger budget = 0;
   fb_lock_store lock_store = 0;
@@ -126,6 +128,7 @@ int main(void) {
   int32_t expired = 0;
   int32_t released = 0;
   int32_t flag = 0;
+  int32_t count = 0;
   char text[256];
   size_t text_len = 0;
 
@@ -162,6 +165,27 @@ int main(void) {
 
   fb_token_bucket_destroy(bucket);
 
+  if (fb_keyed_fixed_window_create(2, 60000000000LL, 4, &keyed_window) != FB_OK) {
+    return 53;
+  }
+  if (fb_keyed_fixed_window_consume(keyed_window, "tenant-a", 8, 1, &decision) != FB_OK || !decision.allowed) {
+    fb_keyed_fixed_window_destroy(keyed_window);
+    return 54;
+  }
+  if (fb_keyed_fixed_window_active_keys(keyed_window, &count) != FB_OK || count != 1) {
+    fb_keyed_fixed_window_destroy(keyed_window);
+    return 55;
+  }
+  if (fb_keyed_fixed_window_clear(keyed_window, "tenant-a", 8, &flag) != FB_OK || !flag) {
+    fb_keyed_fixed_window_destroy(keyed_window);
+    return 56;
+  }
+  if (fb_keyed_fixed_window_reset_all(keyed_window, &count) != FB_OK || count != 0) {
+    fb_keyed_fixed_window_destroy(keyed_window);
+    return 57;
+  }
+  fb_keyed_fixed_window_destroy(keyed_window);
+
   if (fb_fixed_backoff_create(250000000LL, FB_NO_JITTER, &backoff) != FB_OK) {
     return 6;
   }
@@ -183,6 +207,28 @@ int main(void) {
     return 10;
   }
   fb_bulkhead_destroy(bulkhead);
+
+  if (fb_keyed_bulkhead_create(2, 4, &keyed_bulkhead) != FB_OK) {
+    return 58;
+  }
+  if (fb_keyed_bulkhead_acquire(keyed_bulkhead, "tenant-a", 8, &bulkhead_decision) != FB_OK ||
+      !bulkhead_decision.allowed) {
+    fb_keyed_bulkhead_destroy(keyed_bulkhead);
+    return 59;
+  }
+  if (fb_keyed_bulkhead_active_keys(keyed_bulkhead, &count) != FB_OK || count != 1) {
+    fb_keyed_bulkhead_destroy(keyed_bulkhead);
+    return 60;
+  }
+  if (fb_keyed_bulkhead_release(keyed_bulkhead, "tenant-a", 8) != FB_OK) {
+    fb_keyed_bulkhead_destroy(keyed_bulkhead);
+    return 61;
+  }
+  if (fb_keyed_bulkhead_clear(keyed_bulkhead, "tenant-a", 8, &flag) != FB_OK || flag) {
+    fb_keyed_bulkhead_destroy(keyed_bulkhead);
+    return 62;
+  }
+  fb_keyed_bulkhead_destroy(keyed_bulkhead);
 
   if (fb_timeout_create(1000000000LL, &timeout) != FB_OK) {
     return 12;

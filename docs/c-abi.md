@@ -9,9 +9,11 @@ The first ABI surface is intentionally narrow:
 - fixed, linear, and exponential backoff delay calculation
 - token bucket handles
 - fixed window handles
+- keyed fixed window handles
 - sliding window handles
 - circuit breaker handles
 - bulkhead handles
+- keyed bulkhead handles
 - timeout and deadline handles
 - budget ledger handles
 - in-memory lock store and lease handles
@@ -22,6 +24,7 @@ The first ABI surface is intentionally narrow:
 - C callback storage for registry-backed stored fixed windows
 - result export helpers for JSON lines and Prometheus-style text
 - ABI version string and feature checks
+- local limiter reset, configuration inspection, and state inspection helpers
 
 The ABI does not expose Nim strings, sequences, exceptions, refs, or framework
 adapters. Callers own output buffers. FlowBrigade owns opaque handles created
@@ -35,12 +38,14 @@ call and report callback failures as ABI errors.
 nimble cabi
 ```
 
-The task builds `/tmp/libflowbrigade.so` from `src/flowbrigade_c.nim`.
+The task builds `/tmp/libflowbrigade.so` from `src/flowbrigade_c.nim` with
+Nim's ARC memory manager. FlowBrigade does not rely on cycle collection for the
+C ABI surface, and the release tests include an ARC run.
 
 Manual build:
 
 ```sh
-nim c --app:lib -p:src --out:/tmp/libflowbrigade.so src/flowbrigade_c.nim
+nim c --mm:arc --app:lib -p:src --out:/tmp/libflowbrigade.so src/flowbrigade_c.nim
 ```
 
 The C declarations are in [include/flowbrigade.h](../include/flowbrigade.h).
@@ -109,7 +114,8 @@ treat it as thread-local state.
 
 `fb_abi_version()` and `fb_abi_version_string()` return the ABI version.
 Bindings can call `fb_abi_supports(feature, len, &out)` before assuming newer
-groups such as `storage-callback` or `metrics` exist.
+groups such as `storage-callback`, `metrics`, `keyed-fixed-window`,
+`keyed-bulkhead`, or `ratelimit-management` exist.
 
 ## Thread Safety
 
@@ -120,10 +126,20 @@ synchronization primitive.
 
 ## Keyed APIs
 
-Keyed functions, such as the budget ledger API, accept string input as
-`const char*` plus byte length. FlowBrigade copies the bytes during the call and
-does not retain the caller's pointer. Keys are normalized by the underlying Nim
-API, including trimming surrounding whitespace and rejecting empty keys.
+Keyed functions, such as the budget ledger, keyed fixed-window, and keyed
+bulkhead APIs, accept string input as `const char*` plus byte length.
+FlowBrigade copies the bytes during the call and does not retain the caller's
+pointer. Keys are normalized or validated by the underlying Nim API. Blank keys
+and control characters are rejected.
+
+The direct keyed fixed-window ABI is string-keyed. It exposes inspect, consume,
+clear, reset-one-key, reset-all, retained key counting, and configuration
+inspection. It is still process-local; use storage-backed limiters or adapter
+packages when limits must be shared across processes.
+
+The keyed bulkhead ABI is also string-keyed and process-local. It exposes
+inspect, acquire, release, clear, and active-key counting. It does not provide
+thread synchronization or distributed coordination.
 
 Lock lease tokens stay inside opaque `fb_lock_lease` handles. Foreign callers
 should release or inspect leases through the handle and destroy each lease handle

@@ -233,8 +233,10 @@ API docs, tests, and recipes rather than being duplicated here.
 
 - `src/flowbrigade_c.nim`: experimental C ABI implementation.
 - `include/flowbrigade.h`: C declarations for duration, token bucket, fixed
-  window, sliding window, backoff, circuit breaker, bulkhead, timeout, and
-  deadline bindings, plus keyed budget ledger, lock, throttle, and debounce
-  operations, retry callback execution, fallback provider execution, named
-  limiter registry operations, callback-backed stored fixed windows, metrics
-  export helpers, and ABI feature checks.
+  window, keyed fixed window, sliding window, backoff, circuit breaker,
+  bulkhead, keyed bulkhead, timeout, and deadline bindings, plus keyed budget
+  ledger, lock, throttle, and debounce operations, retry callback execution,
+  fallback provider execution, named limiter registry operations,
+  callback-backed stored fixed windows, metrics export helpers, local limiter
+  management helpers, and ABI feature checks. The C ABI shared library task
+  builds with Nim ARC by default.

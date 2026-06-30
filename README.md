@@ -544,9 +544,10 @@ The current ABI covers:
 
 - duration parsing and formatting
 - fixed, linear, and exponential backoff delay calculation
-- token bucket, fixed window, and sliding window rate limiters
+- token bucket, fixed window, keyed fixed window, and sliding window rate
+  limiters, including local reset and inspection helpers
 - circuit breaker state transitions
-- bulkhead permit tracking
+- bulkhead and keyed bulkhead permit tracking
 - timeout/deadline checks and remaining-time helpers
 - budget ledger quota checks, refunds, and resets
 - in-memory lock stores with opaque lease handles
@@ -564,7 +565,8 @@ Build the shared library:
 nimble cabi
 ```
 
-The C declarations live in [include/flowbrigade.h](include/flowbrigade.h).
+The C ABI build uses Nim ARC by default. The C declarations live in
+[include/flowbrigade.h](include/flowbrigade.h).
 Call `NimMain()` once before calling `fb_*` functions from a non-Nim host
 process. The ABI uses opaque handles, caller-owned buffers, fixed structs, and
 integer status codes; Nim exceptions do not cross the boundary. Use

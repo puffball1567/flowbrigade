@@ -121,6 +121,9 @@ type
   FixedWindowHandle = ref object
     limiter: FixedWindow
 
+  KeyedFixedWindowHandle = ref object
+    limiter: KeyedFixedWindow[string]
+
   SlidingWindowHandle = ref object
     limiter: SlidingWindow
 
@@ -129,6 +132,9 @@ type
 
   BulkheadHandle = ref object
     limiter: Bulkhead
+
+  KeyedBulkheadHandle = ref object
+    limiter: KeyedBulkhead[string]
 
   TimeoutHandle = ref object
     timeout: Timeout
@@ -286,6 +292,9 @@ template catchAbiErrors(body: untyped): cint =
   except ValueError as exc:
     setLastError(exc.msg)
     FB_ERR_INVALID_ARGUMENT
+  except BulkheadError as exc:
+    setLastError(exc.msg)
+    FB_ERR_INVALID_ARGUMENT
   except FlowLockError as exc:
     setLastError(exc.msg)
     FB_ERR_INVALID_ARGUMENT
@@ -320,7 +329,10 @@ proc fb_abi_supports*(
       "fallback-callback",
       "limiter-registry",
       "storage-callback",
-      "metrics"
+      "metrics",
+      "ratelimit-management",
+      "keyed-fixed-window",
+      "keyed-bulkhead"
     ]: 1'i32 else: 0'i32)
     FB_OK
 
@@ -523,6 +535,58 @@ proc fb_token_bucket_consume*(
     var state = cast[TokenBucketHandle](handle)
     writeRateLimitResult(outResult, state.limiter.consume(int(cost)))
 
+proc fb_token_bucket_reset*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[TokenBucketHandle](handle)
+    state.limiter.reset()
+    FB_OK
+
+proc fb_token_bucket_configured_rate*(
+    handle: pointer;
+    outRate: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outRate.isNil:
+      return abiInvalid("handle and out_rate must not be nil")
+    let state = cast[TokenBucketHandle](handle)
+    outRate[] = int32(state.limiter.configuredRate())
+    FB_OK
+
+proc fb_token_bucket_configured_period*(
+    handle: pointer;
+    outPeriodNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outPeriodNs.isNil:
+      return abiInvalid("handle and out_period_ns must not be nil")
+    let state = cast[TokenBucketHandle](handle)
+    outPeriodNs[] = state.limiter.configuredPeriod().inNanoseconds
+    FB_OK
+
+proc fb_token_bucket_configured_burst*(
+    handle: pointer;
+    outBurst: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outBurst.isNil:
+      return abiInvalid("handle and out_burst must not be nil")
+    let state = cast[TokenBucketHandle](handle)
+    outBurst[] = int32(state.limiter.configuredBurst())
+    FB_OK
+
+proc fb_token_bucket_available_tokens*(
+    handle: pointer;
+    outTokens: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outTokens.isNil:
+      return abiInvalid("handle and out_tokens must not be nil")
+    var state = cast[TokenBucketHandle](handle)
+    outTokens[] = int32(state.limiter.availableTokens())
+    FB_OK
+
 proc fb_fixed_window_create*(
     limit: int32;
     perNs: int64;
@@ -564,6 +628,182 @@ proc fb_fixed_window_consume*(
     var state = cast[FixedWindowHandle](handle)
     writeRateLimitResult(outResult, state.limiter.consume(int(cost)))
 
+proc fb_fixed_window_reset*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[FixedWindowHandle](handle)
+    state.limiter.reset()
+    FB_OK
+
+proc fb_fixed_window_configured_limit*(
+    handle: pointer;
+    outLimit: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outLimit.isNil:
+      return abiInvalid("handle and out_limit must not be nil")
+    let state = cast[FixedWindowHandle](handle)
+    outLimit[] = int32(state.limiter.configuredLimit())
+    FB_OK
+
+proc fb_fixed_window_configured_period*(
+    handle: pointer;
+    outPeriodNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outPeriodNs.isNil:
+      return abiInvalid("handle and out_period_ns must not be nil")
+    let state = cast[FixedWindowHandle](handle)
+    outPeriodNs[] = state.limiter.configuredPeriod().inNanoseconds
+    FB_OK
+
+proc fb_fixed_window_in_use*(
+    handle: pointer;
+    outInUse: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outInUse.isNil:
+      return abiInvalid("handle and out_in_use must not be nil")
+    var state = cast[FixedWindowHandle](handle)
+    outInUse[] = int32(state.limiter.inUse())
+    FB_OK
+
+proc fb_keyed_fixed_window_create*(
+    limit: int32;
+    perNs: int64;
+    maxKeys: int32;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = KeyedFixedWindowHandle(
+      limiter: initKeyedFixedWindow[string](
+        limit = int(limit),
+        per = durationFromNanos(perNs),
+        maxKeys = int(maxKeys)
+      )
+    )
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_keyed_fixed_window_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[KeyedFixedWindowHandle](handle))
+
+proc fb_keyed_fixed_window_inspect*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int32;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[KeyedFixedWindowHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeRateLimitResult(outResult, state.limiter.inspect(copiedKey, int(cost)))
+
+proc fb_keyed_fixed_window_consume*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int32;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[KeyedFixedWindowHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeRateLimitResult(outResult, state.limiter.consume(copiedKey, int(cost)))
+
+proc fb_keyed_fixed_window_clear*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outCleared: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCleared.isNil:
+      return abiInvalid("handle and out_cleared must not be nil")
+    var state = cast[KeyedFixedWindowHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outCleared[] = (if state.limiter.clear(copiedKey): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_keyed_fixed_window_reset*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outReset: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outReset.isNil:
+      return abiInvalid("handle and out_reset must not be nil")
+    var state = cast[KeyedFixedWindowHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outReset[] = (if state.limiter.reset(copiedKey): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_keyed_fixed_window_reset_all*(
+    handle: pointer;
+    outRemoved: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outRemoved.isNil:
+      return abiInvalid("handle and out_removed must not be nil")
+    var state = cast[KeyedFixedWindowHandle](handle)
+    outRemoved[] = int32(state.limiter.resetAll())
+    FB_OK
+
+proc fb_keyed_fixed_window_active_keys*(
+    handle: pointer;
+    outCount: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCount.isNil:
+      return abiInvalid("handle and out_count must not be nil")
+    var state = cast[KeyedFixedWindowHandle](handle)
+    outCount[] = int32(state.limiter.activeKeys())
+    FB_OK
+
+proc fb_keyed_fixed_window_configured_limit*(
+    handle: pointer;
+    outLimit: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outLimit.isNil:
+      return abiInvalid("handle and out_limit must not be nil")
+    let state = cast[KeyedFixedWindowHandle](handle)
+    outLimit[] = int32(state.limiter.configuredLimit())
+    FB_OK
+
+proc fb_keyed_fixed_window_configured_period*(
+    handle: pointer;
+    outPeriodNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outPeriodNs.isNil:
+      return abiInvalid("handle and out_period_ns must not be nil")
+    let state = cast[KeyedFixedWindowHandle](handle)
+    outPeriodNs[] = state.limiter.configuredPeriod().inNanoseconds
+    FB_OK
+
+proc fb_keyed_fixed_window_key_capacity*(
+    handle: pointer;
+    outCapacity: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCapacity.isNil:
+      return abiInvalid("handle and out_capacity must not be nil")
+    let state = cast[KeyedFixedWindowHandle](handle)
+    outCapacity[] = int32(state.limiter.keyCapacity())
+    FB_OK
+
 proc fb_sliding_window_create*(
     limit: int32;
     perNs: int64;
@@ -604,6 +844,47 @@ proc fb_sliding_window_consume*(
       return abiInvalid("handle must not be nil")
     var state = cast[SlidingWindowHandle](handle)
     writeRateLimitResult(outResult, state.limiter.consume(int(cost)))
+
+proc fb_sliding_window_reset*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[SlidingWindowHandle](handle)
+    state.limiter.reset()
+    FB_OK
+
+proc fb_sliding_window_configured_limit*(
+    handle: pointer;
+    outLimit: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outLimit.isNil:
+      return abiInvalid("handle and out_limit must not be nil")
+    let state = cast[SlidingWindowHandle](handle)
+    outLimit[] = int32(state.limiter.configuredLimit())
+    FB_OK
+
+proc fb_sliding_window_configured_period*(
+    handle: pointer;
+    outPeriodNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outPeriodNs.isNil:
+      return abiInvalid("handle and out_period_ns must not be nil")
+    let state = cast[SlidingWindowHandle](handle)
+    outPeriodNs[] = state.limiter.configuredPeriod().inNanoseconds
+    FB_OK
+
+proc fb_sliding_window_current_use*(
+    handle: pointer;
+    outInUse: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outInUse.isNil:
+      return abiInvalid("handle and out_in_use must not be nil")
+    var state = cast[SlidingWindowHandle](handle)
+    outInUse[] = int32(state.limiter.currentWindowUse())
+    FB_OK
 
 proc fb_circuit_breaker_create*(
     failureThreshold: int32;
@@ -707,6 +988,89 @@ proc fb_bulkhead_release*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
       return abiInvalid("handle must not be nil")
     var state = cast[BulkheadHandle](handle)
     state.limiter.release()
+    FB_OK
+
+proc fb_keyed_bulkhead_create*(
+    capacity: int32;
+    maxKeys: int32;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = KeyedBulkheadHandle(
+      limiter: initKeyedBulkhead[string](capacity = int(capacity), maxKeys = int(maxKeys))
+    )
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_keyed_bulkhead_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[KeyedBulkheadHandle](handle))
+
+proc fb_keyed_bulkhead_inspect*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outResult: ptr FbBulkheadResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    let state = cast[KeyedBulkheadHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeBulkheadResult(outResult, state.limiter.inspect(copiedKey))
+
+proc fb_keyed_bulkhead_acquire*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outResult: ptr FbBulkheadResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[KeyedBulkheadHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeBulkheadResult(outResult, state.limiter.acquire(copiedKey))
+
+proc fb_keyed_bulkhead_release*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[KeyedBulkheadHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    state.limiter.release(copiedKey)
+    FB_OK
+
+proc fb_keyed_bulkhead_clear*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outCleared: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCleared.isNil:
+      return abiInvalid("handle and out_cleared must not be nil")
+    var state = cast[KeyedBulkheadHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outCleared[] = (if state.limiter.clear(copiedKey): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_keyed_bulkhead_active_keys*(
+    handle: pointer;
+    outCount: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCount.isNil:
+      return abiInvalid("handle and out_count must not be nil")
+    let state = cast[KeyedBulkheadHandle](handle)
+    outCount[] = int32(state.limiter.activeKeys())
     FB_OK
 
 proc fb_timeout_create*(

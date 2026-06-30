@@ -576,11 +576,13 @@ make gaps visible before adding new features.
 | duration parse | returns nanoseconds and error codes |
 | duration format | writes caller-owned buffers and reports required length |
 | backoff handles | fixed, linear, and exponential delay calculation |
-| token bucket handle | create, consume, denial metadata, destroy |
-| fixed window handle | create, inspect, consume, denial, destroy |
-| sliding window handle | create, consume, denial, destroy |
+| token bucket handle | create, inspect, consume, denial metadata, reset, configuration/state inspection, destroy |
+| fixed window handle | create, inspect, consume, denial, reset, configuration/state inspection, destroy |
+| keyed fixed window handle | create, inspect, consume, clear, reset, reset all, active keys, configuration inspection, invalid keys, destroy |
+| sliding window handle | create, consume, denial, reset, configuration/state inspection, destroy |
 | circuit breaker handle | create, allow, record failure, state, destroy |
 | bulkhead handle | create, inspect, acquire, release, destroy |
+| keyed bulkhead handle | create, inspect, acquire, release, clear, active keys, invalid keys, destroy |
 | timeout and deadline handles | create, expired, elapsed/remaining, clamp, destroy |
 | budget ledger handle | create, inspect, consume, denial, refund, reset, reset all, destroy |
 | lock store handle | create, acquire, conflict, inspect, refresh, release, release key, destroy |

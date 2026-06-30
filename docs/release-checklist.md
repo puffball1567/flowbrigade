@@ -18,6 +18,7 @@ Use this before publishing a tagged release.
 
 ```sh
 nim r --nimcache:/tmp/flowbrigade-nimcache -p:src tests/all.nim
+nim r --mm:arc --nimcache:/tmp/flowbrigade-arc-nimcache -p:src tests/all.nim
 nim check --nimcache:/tmp/flowbrigade-nimcache -p:src src/flowbrigade.nim
 nim doc --nimcache:/tmp/flowbrigade-nimcache -p:src --outdir:/tmp/flowbrigade-docs src/flowbrigade.nim
 nimble --nimbleDir:/tmp/flowbrigade-nimble --useSystemNim check
@@ -67,6 +68,7 @@ nimble --nimbleDir:/tmp/flowbrigade-nimble --offline --nim:/path/to/nim test
 - Compatibility expectations are listed in `docs/api-stability.md`.
 - Experimental C ABI declarations stay synchronized with
   `src/flowbrigade_c.nim`.
+- C ABI ARC build remains covered by `nimble cabi` and an ARC test run.
 
 ## Documentation
 

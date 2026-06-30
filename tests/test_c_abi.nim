@@ -126,6 +126,12 @@ suite "C ABI":
     var supported: int32
     check fb_abi_supports("storage-callback", 16, addr supported) == FB_OK
     check supported == 1
+    check fb_abi_supports("keyed-bulkhead", 14, addr supported) == FB_OK
+    check supported == 1
+    check fb_abi_supports("keyed-fixed-window", 18, addr supported) == FB_OK
+    check supported == 1
+    check fb_abi_supports("ratelimit-management", 20, addr supported) == FB_OK
+    check supported == 1
     check fb_abi_supports("unknown", 7, addr supported) == FB_OK
     check supported == 0
     check fb_abi_supports(nil, 0, addr supported) == FB_ERR_INVALID_ARGUMENT
@@ -199,15 +205,31 @@ suite "C ABI":
     check not handle.isNil
 
     var result: FbRateLimitResult
+    var value: int32
+    var periodNs: int64
+    check fb_token_bucket_configured_rate(handle, addr value) == FB_OK
+    check value == 2
+    check fb_token_bucket_configured_burst(handle, addr value) == FB_OK
+    check value == 3
+    check fb_token_bucket_configured_period(handle, addr periodNs) == FB_OK
+    check periodNs == initDuration(seconds = 1).inNanoseconds
+    check fb_token_bucket_available_tokens(handle, addr value) == FB_OK
+    check value == 3
+
     check fb_token_bucket_consume(handle, 2, addr result) == FB_OK
     check result.allowed == 1
     check result.limit == 3
     check result.remaining == 1
+    check fb_token_bucket_available_tokens(handle, addr value) == FB_OK
+    check value == 1
 
     check fb_token_bucket_consume(handle, 2, addr result) == FB_OK
     check result.allowed == 0
     check result.remaining == 1
     check result.retryAfterNs > 0
+    check fb_token_bucket_reset(handle) == FB_OK
+    check fb_token_bucket_available_tokens(handle, addr value) == FB_OK
+    check value == 3
 
     fb_token_bucket_destroy(handle)
 
@@ -248,6 +270,12 @@ suite "C ABI":
     check not handle.isNil
 
     var result: FbRateLimitResult
+    var value: int32
+    var periodNs: int64
+    check fb_fixed_window_configured_limit(handle, addr value) == FB_OK
+    check value == 2
+    check fb_fixed_window_configured_period(handle, addr periodNs) == FB_OK
+    check periodNs == initDuration(seconds = 60).inNanoseconds
     check fb_fixed_window_inspect(handle, 1, addr result) == FB_OK
     check result.allowed == 1
     check result.remaining == 1
@@ -255,13 +283,69 @@ suite "C ABI":
     check fb_fixed_window_consume(handle, 1, addr result) == FB_OK
     check result.allowed == 1
     check result.remaining == 1
+    check fb_fixed_window_in_use(handle, addr value) == FB_OK
+    check value == 1
     check fb_fixed_window_consume(handle, 1, addr result) == FB_OK
     check result.allowed == 1
     check result.remaining == 0
     check fb_fixed_window_consume(handle, 1, addr result) == FB_OK
     check result.allowed == 0
+    check fb_fixed_window_reset(handle) == FB_OK
+    check fb_fixed_window_in_use(handle, addr value) == FB_OK
+    check value == 0
+    check fb_fixed_window_consume(handle, 2, addr result) == FB_OK
+    check result.allowed == 1
 
     fb_fixed_window_destroy(handle)
+
+  test "keyed fixed window handle manages keyed state":
+    var handle: pointer
+    check fb_keyed_fixed_window_create(2, initDuration(seconds = 60).inNanoseconds, 2, addr handle) == FB_OK
+    check not handle.isNil
+
+    var result: FbRateLimitResult
+    var value: int32
+    var periodNs: int64
+    check fb_keyed_fixed_window_configured_limit(handle, addr value) == FB_OK
+    check value == 2
+    check fb_keyed_fixed_window_configured_period(handle, addr periodNs) == FB_OK
+    check periodNs == initDuration(seconds = 60).inNanoseconds
+    check fb_keyed_fixed_window_key_capacity(handle, addr value) == FB_OK
+    check value == 2
+
+    check fb_keyed_fixed_window_inspect(handle, "alice", 5, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_keyed_fixed_window_active_keys(handle, addr value) == FB_OK
+    check value == 0
+
+    check fb_keyed_fixed_window_consume(handle, "alice", 5, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_keyed_fixed_window_consume(handle, "alice", 5, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_keyed_fixed_window_consume(handle, "alice", 5, 1, addr result) == FB_OK
+    check result.allowed == 0
+
+    check fb_keyed_fixed_window_active_keys(handle, addr value) == FB_OK
+    check value == 1
+    check fb_keyed_fixed_window_clear(handle, "alice", 5, addr value) == FB_OK
+    check value == 1
+    check fb_keyed_fixed_window_clear(handle, "alice", 5, addr value) == FB_OK
+    check value == 0
+
+    check fb_keyed_fixed_window_consume(handle, "bob", 3, 1, addr result) == FB_OK
+    check fb_keyed_fixed_window_consume(handle, "carol", 5, 1, addr result) == FB_OK
+    check fb_keyed_fixed_window_consume(handle, "dave", 4, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_keyed_fixed_window_reset(handle, "bob", 3, addr value) == FB_OK
+    check value == 1
+    check fb_keyed_fixed_window_reset_all(handle, addr value) == FB_OK
+    check value == 1
+    check fb_keyed_fixed_window_active_keys(handle, addr value) == FB_OK
+    check value == 0
+
+    check fb_keyed_fixed_window_consume(handle, " ", 1, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_keyed_fixed_window_inspect(handle, nil, 0, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+
+    fb_keyed_fixed_window_destroy(handle)
 
   test "sliding window handle can inspect and consume":
     var handle: pointer
@@ -269,6 +353,12 @@ suite "C ABI":
     check not handle.isNil
 
     var result: FbRateLimitResult
+    var value: int32
+    var periodNs: int64
+    check fb_sliding_window_configured_limit(handle, addr value) == FB_OK
+    check value == 2
+    check fb_sliding_window_configured_period(handle, addr periodNs) == FB_OK
+    check periodNs == initDuration(seconds = 60).inNanoseconds
     check fb_sliding_window_inspect(handle, 1, addr result) == FB_OK
     check result.allowed == 1
     check result.remaining == 1
@@ -276,11 +366,18 @@ suite "C ABI":
     check fb_sliding_window_consume(handle, 1, addr result) == FB_OK
     check result.allowed == 1
     check result.remaining == 1
+    check fb_sliding_window_current_use(handle, addr value) == FB_OK
+    check value == 1
     check fb_sliding_window_consume(handle, 1, addr result) == FB_OK
     check result.allowed == 1
     check result.remaining == 0
     check fb_sliding_window_consume(handle, 1, addr result) == FB_OK
     check result.allowed == 0
+    check fb_sliding_window_reset(handle) == FB_OK
+    check fb_sliding_window_current_use(handle, addr value) == FB_OK
+    check value == 0
+    check fb_sliding_window_consume(handle, 2, addr result) == FB_OK
+    check result.allowed == 1
 
     fb_sliding_window_destroy(handle)
 
@@ -335,6 +432,46 @@ suite "C ABI":
     check result.remaining == 1
 
     fb_bulkhead_destroy(handle)
+
+  test "keyed bulkhead handle tracks permits per key":
+    var handle: pointer
+    check fb_keyed_bulkhead_create(2, 2, addr handle) == FB_OK
+    check not handle.isNil
+
+    var result: FbBulkheadResult
+    var value: int32
+    check fb_keyed_bulkhead_inspect(handle, "tenant-a", 8, addr result) == FB_OK
+    check result.allowed == 1
+    check result.capacity == 2
+    check result.inUse == 0
+    check result.remaining == 2
+
+    check fb_keyed_bulkhead_acquire(handle, "tenant-a", 8, addr result) == FB_OK
+    check result.allowed == 1
+    check result.inUse == 1
+    check fb_keyed_bulkhead_acquire(handle, "tenant-a", 8, addr result) == FB_OK
+    check result.allowed == 1
+    check result.inUse == 2
+    check fb_keyed_bulkhead_acquire(handle, "tenant-a", 8, addr result) == FB_OK
+    check result.allowed == 0
+
+    check fb_keyed_bulkhead_acquire(handle, "tenant-b", 8, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_keyed_bulkhead_active_keys(handle, addr value) == FB_OK
+    check value == 2
+    check fb_keyed_bulkhead_acquire(handle, "tenant-c", 8, addr result) == FB_ERR_INVALID_ARGUMENT
+
+    check fb_keyed_bulkhead_release(handle, "tenant-a", 8) == FB_OK
+    check fb_keyed_bulkhead_inspect(handle, "tenant-a", 8, addr result) == FB_OK
+    check result.inUse == 1
+    check fb_keyed_bulkhead_clear(handle, "tenant-a", 8, addr value) == FB_OK
+    check value == 1
+    check fb_keyed_bulkhead_clear(handle, "tenant-a", 8, addr value) == FB_OK
+    check value == 0
+    check fb_keyed_bulkhead_acquire(handle, " ", 1, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_keyed_bulkhead_inspect(handle, nil, 0, addr result) == FB_ERR_INVALID_ARGUMENT
+
+    fb_keyed_bulkhead_destroy(handle)
 
   test "timeout and deadline handles expose elapsed state":
     var timeoutHandle: pointer
