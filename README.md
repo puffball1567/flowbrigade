@@ -149,6 +149,8 @@ For a step-by-step adoption path, see
 checks, see [docs/adoption-checklist.md](docs/adoption-checklist.md).
 For Prologue applications, see
 [docs/integrations-prologue.md](docs/integrations-prologue.md).
+For batch runners and workflow-engine runtimes, see
+[docs/batch-workflows.md](docs/batch-workflows.md).
 
 ## Recipes
 
@@ -157,6 +159,7 @@ Compile-checked recipes live in [recipes/](recipes/):
 - [API client retry](recipes/api_client_retry.nim)
 - [Login rate limit](recipes/login_rate_limit.nim)
 - [Worker backpressure](recipes/worker_backpressure.nim)
+- [Batch worker runtime](recipes/batch_worker_runtime.nim)
 - [Failure modes](recipes/failure_modes.nim)
 - [Observability hooks](recipes/observability_hooks.nim)
 - [Named limiters](recipes/named_limiters.nim)

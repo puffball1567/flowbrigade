@@ -5,6 +5,8 @@ Recipes are complete, compile-checked examples for common FlowBrigade use cases.
 - `api_client_retry.nim`: retry an API call with exponential backoff and observer events.
 - `login_rate_limit.nim`: build validated keys and return rate-limit headers.
 - `worker_backpressure.nim`: combine token bucket, circuit breaker, and timeout.
+- `batch_worker_runtime.nim`: wrap batch/workflow task execution with retry,
+  quota, deadline, circuit breaker, bulkhead, and metrics.
 - `failure_modes.nim`: choose fail-closed or fail-open behavior for storage failures.
 - `observability_hooks.nim`: collect retry, circuit breaker, and stored limiter events.
 - `named_limiters.nim`: combine named limiters, extracted keys, and HTTP decisions.

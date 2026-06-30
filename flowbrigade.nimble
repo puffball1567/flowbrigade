@@ -35,6 +35,7 @@ task snippets, "Check README snippets and dependency-free recipes":
   exec "nim check --nimcache:/tmp/flowbrigade-nimcache -p:src recipes/api_client_retry.nim"
   exec "nim check --nimcache:/tmp/flowbrigade-nimcache -p:src recipes/login_rate_limit.nim"
   exec "nim check --nimcache:/tmp/flowbrigade-nimcache -p:src recipes/worker_backpressure.nim"
+  exec "nim check --nimcache:/tmp/flowbrigade-nimcache -p:src recipes/batch_worker_runtime.nim"
   exec "nim check --nimcache:/tmp/flowbrigade-nimcache -p:src recipes/failure_modes.nim"
   exec "nim check --nimcache:/tmp/flowbrigade-nimcache -p:src recipes/observability_hooks.nim"
   exec "nim check --nimcache:/tmp/flowbrigade-nimcache -p:src recipes/named_limiters.nim"
