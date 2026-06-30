@@ -13,6 +13,8 @@ int main(void) {
   fb_lock_store lock_store = 0;
   fb_lock_lease first_lease = 0;
   fb_lock_lease second_lease = 0;
+  fb_throttle throttle = 0;
+  fb_debouncer debouncer = 0;
   fb_rate_limit_result decision;
   fb_bulkhead_result bulkhead_decision;
   fb_budget_result budget_decision;
@@ -21,6 +23,7 @@ int main(void) {
   int64_t delay_ns = 0;
   int32_t expired = 0;
   int32_t released = 0;
+  int32_t flag = 0;
 
   NimMain();
 
@@ -139,6 +142,40 @@ int main(void) {
   fb_lock_lease_destroy(first_lease);
   fb_lock_lease_destroy(second_lease);
   fb_lock_store_destroy(lock_store);
+
+  if (fb_throttle_create(1000000000LL, &throttle) != FB_OK) {
+    return 26;
+  }
+  if (fb_throttle_allow(throttle, &flag) != FB_OK || !flag) {
+    fb_throttle_destroy(throttle);
+    return 27;
+  }
+  if (fb_throttle_allow(throttle, &flag) != FB_OK || flag) {
+    fb_throttle_destroy(throttle);
+    return 28;
+  }
+  if (fb_throttle_reset(throttle) != FB_OK) {
+    fb_throttle_destroy(throttle);
+    return 29;
+  }
+  fb_throttle_destroy(throttle);
+
+  if (fb_debouncer_create(1000000000LL, &debouncer) != FB_OK) {
+    return 30;
+  }
+  if (fb_debouncer_ready(debouncer, &flag) != FB_OK || flag) {
+    fb_debouncer_destroy(debouncer);
+    return 31;
+  }
+  if (fb_debouncer_call(debouncer) != FB_OK) {
+    fb_debouncer_destroy(debouncer);
+    return 32;
+  }
+  if (fb_debouncer_cancel(debouncer) != FB_OK) {
+    fb_debouncer_destroy(debouncer);
+    return 33;
+  }
+  fb_debouncer_destroy(debouncer);
 
   puts("flowbrigade C ABI smoke test passed");
   return 0;

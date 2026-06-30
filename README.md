@@ -537,6 +537,7 @@ The current ABI covers:
 - timeout/deadline checks and remaining-time helpers
 - budget ledger quota checks, refunds, and resets
 - in-memory lock stores with opaque lease handles
+- throttle and debounce state handles
 
 Build the shared library:
 

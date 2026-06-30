@@ -15,6 +15,7 @@ The first ABI surface is intentionally narrow:
 - timeout and deadline handles
 - budget ledger handles
 - in-memory lock store and lease handles
+- throttle and debounce handles
 
 The ABI does not expose Nim strings, sequences, exceptions, refs, callbacks, or
 framework adapters. Callers own output buffers. FlowBrigade owns opaque handles

@@ -76,6 +76,8 @@ typedef void* fb_deadline;
 typedef void* fb_budget_ledger;
 typedef void* fb_lock_store;
 typedef void* fb_lock_lease;
+typedef void* fb_throttle;
+typedef void* fb_debouncer;
 
 void NimMain(void);
 
@@ -147,6 +149,18 @@ int32_t fb_lock_release(fb_lock_store handle, fb_lock_lease lease, int32_t* out_
 int32_t fb_lock_release_key(fb_lock_store handle, const char* key, size_t key_len, int32_t* out_released);
 int32_t fb_lock_refresh(fb_lock_store handle, fb_lock_lease lease, int64_t ttl_ns, fb_lock_acquire_result* out_result);
 int32_t fb_lock_inspect(fb_lock_store handle, fb_lock_lease lease, fb_lock_status* out_status);
+
+int32_t fb_throttle_create(int64_t every_ns, fb_throttle* out_handle);
+void fb_throttle_destroy(fb_throttle handle);
+int32_t fb_throttle_allow(fb_throttle handle, int32_t* out_allowed);
+int32_t fb_throttle_reset(fb_throttle handle);
+
+int32_t fb_debouncer_create(int64_t delay_ns, fb_debouncer* out_handle);
+void fb_debouncer_destroy(fb_debouncer handle);
+int32_t fb_debouncer_call(fb_debouncer handle);
+int32_t fb_debouncer_ready(fb_debouncer handle, int32_t* out_ready);
+int32_t fb_debouncer_consume_ready(fb_debouncer handle, int32_t* out_ready);
+int32_t fb_debouncer_cancel(fb_debouncer handle);
 
 #ifdef __cplusplus
 }

@@ -292,6 +292,34 @@ suite "C ABI":
     fb_lock_lease_destroy(thirdLease)
     fb_lock_store_destroy(store)
 
+  test "throttle and debouncer handles expose traffic shaping state":
+    var throttleHandle: pointer
+    check fb_throttle_create(initDuration(seconds = 1).inNanoseconds, addr throttleHandle) == FB_OK
+    check not throttleHandle.isNil
+
+    var flag: int32
+    check fb_throttle_allow(throttleHandle, addr flag) == FB_OK
+    check flag == 1
+    check fb_throttle_allow(throttleHandle, addr flag) == FB_OK
+    check flag == 0
+    check fb_throttle_reset(throttleHandle) == FB_OK
+    check fb_throttle_allow(throttleHandle, addr flag) == FB_OK
+    check flag == 1
+    fb_throttle_destroy(throttleHandle)
+
+    var debouncerHandle: pointer
+    check fb_debouncer_create(initDuration(seconds = 1).inNanoseconds, addr debouncerHandle) == FB_OK
+    check not debouncerHandle.isNil
+    check fb_debouncer_ready(debouncerHandle, addr flag) == FB_OK
+    check flag == 0
+    check fb_debouncer_call(debouncerHandle) == FB_OK
+    check fb_debouncer_ready(debouncerHandle, addr flag) == FB_OK
+    check flag == 0
+    check fb_debouncer_cancel(debouncerHandle) == FB_OK
+    check fb_debouncer_consume_ready(debouncerHandle, addr flag) == FB_OK
+    check flag == 0
+    fb_debouncer_destroy(debouncerHandle)
+
   test "C ABI rejects invalid arguments as error codes":
     var result: FbRateLimitResult
     var budgetResult: FbBudgetResult
@@ -334,3 +362,21 @@ suite "C ABI":
       FB_ERR_INVALID_ARGUMENT
     check fb_lock_inspect(lockStore, nil, nil) == FB_ERR_INVALID_ARGUMENT
     fb_lock_store_destroy(lockStore)
+
+    check fb_throttle_create(0, nil) == FB_ERR_INVALID_ARGUMENT
+    var throttleHandle: pointer
+    check fb_throttle_create(initDuration(seconds = 1).inNanoseconds, addr throttleHandle) == FB_OK
+    check fb_throttle_allow(nil, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_throttle_allow(throttleHandle, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_throttle_reset(nil) == FB_ERR_INVALID_ARGUMENT
+    fb_throttle_destroy(throttleHandle)
+
+    check fb_debouncer_create(0, nil) == FB_ERR_INVALID_ARGUMENT
+    var debouncerHandle: pointer
+    check fb_debouncer_create(initDuration(seconds = 1).inNanoseconds, addr debouncerHandle) == FB_OK
+    check fb_debouncer_call(nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_debouncer_ready(nil, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_debouncer_ready(debouncerHandle, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_debouncer_consume_ready(nil, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_debouncer_cancel(nil) == FB_ERR_INVALID_ARGUMENT
+    fb_debouncer_destroy(debouncerHandle)

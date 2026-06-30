@@ -4,9 +4,11 @@ import flowbrigade/backoff
 import flowbrigade/budget
 import flowbrigade/bulkhead
 import flowbrigade/circuit_breaker
+import flowbrigade/debounce
 import flowbrigade/durations
 import flowbrigade/locks
 import flowbrigade/ratelimit
+import flowbrigade/throttle
 import flowbrigade/timeout
 
 const
@@ -91,6 +93,12 @@ type
 
   LockLeaseHandle = ref object
     lease: LockAcquireResult
+
+  ThrottleHandle = ref object
+    throttle: Throttle
+
+  DebouncerHandle = ref object
+    debouncer: Debouncer
 
 var lastAbiError = ""
 
@@ -806,3 +814,92 @@ proc fb_lock_inspect*(
     var state = cast[LockStoreHandle](handle)
     let leaseState = cast[LockLeaseHandle](lease)
     writeLockStatus(outStatus, state.store.inspect(leaseState.lease))
+
+proc fb_throttle_create*(
+    everyNs: int64;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = ThrottleHandle(throttle: initThrottle(durationFromNanos(everyNs)))
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_throttle_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[ThrottleHandle](handle))
+
+proc fb_throttle_allow*(
+    handle: pointer;
+    outAllowed: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outAllowed.isNil:
+      return abiInvalid("handle and out_allowed must not be nil")
+    var state = cast[ThrottleHandle](handle)
+    outAllowed[] = (if state.throttle.allow(): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_throttle_reset*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[ThrottleHandle](handle)
+    state.throttle.reset()
+    FB_OK
+
+proc fb_debouncer_create*(
+    delayNs: int64;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = DebouncerHandle(debouncer: initDebouncer(durationFromNanos(delayNs)))
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_debouncer_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[DebouncerHandle](handle))
+
+proc fb_debouncer_call*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[DebouncerHandle](handle)
+    state.debouncer.call()
+    FB_OK
+
+proc fb_debouncer_ready*(
+    handle: pointer;
+    outReady: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outReady.isNil:
+      return abiInvalid("handle and out_ready must not be nil")
+    let state = cast[DebouncerHandle](handle)
+    outReady[] = (if state.debouncer.ready(): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_debouncer_consume_ready*(
+    handle: pointer;
+    outReady: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outReady.isNil:
+      return abiInvalid("handle and out_ready must not be nil")
+    var state = cast[DebouncerHandle](handle)
+    outReady[] = (if state.debouncer.consumeReady(): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_debouncer_cancel*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[DebouncerHandle](handle)
+    state.debouncer.cancel()
+    FB_OK

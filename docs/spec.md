@@ -85,6 +85,13 @@ non-acquired lease result. Releasing by lease must not clear a newer lock with a
 different token. Portable bindings should keep lease tokens behind language-owned
 or opaque handles and expose explicit lease cleanup.
 
+## Throttle And Debounce
+
+Throttles allow the first action immediately, then deny repeated actions until
+the interval has elapsed or the throttle is reset. Debouncers track pending work
+after a call, become ready after a quiet delay, and clear pending state when
+ready work is consumed or canceled.
+
 ## ABI Boundary
 
 Portable bindings should avoid language-specific memory ownership crossing the
