@@ -9,6 +9,10 @@ typedef struct retry_state {
   int64_t last_delay_ns;
 } retry_state;
 
+typedef struct fallback_state {
+  int32_t calls[2];
+} fallback_state;
+
 static int32_t retry_operation(void* user_data, int32_t attempt) {
   retry_state* state = (retry_state*)user_data;
   state->calls = attempt;
@@ -21,6 +25,12 @@ static int32_t retry_sleep(void* user_data, int64_t delay_ns, int32_t attempt) {
   state->sleep_calls++;
   state->last_delay_ns = delay_ns;
   return FB_OK;
+}
+
+static int32_t fallback_operation(void* user_data, int32_t provider_index) {
+  fallback_state* state = (fallback_state*)user_data;
+  state->calls[provider_index]++;
+  return provider_index == 1 ? FB_OK : 55;
 }
 
 int main(void) {
@@ -37,6 +47,9 @@ int main(void) {
   fb_debouncer debouncer = 0;
   fb_retry_result retry_decision;
   retry_state retry = {0, 0, 0};
+  fb_fallback_provider fallback_providers[2];
+  fb_fallback_result fallback_decision;
+  fallback_state fallback = {{0, 0}};
   fb_rate_limit_result decision;
   fb_bulkhead_result bulkhead_decision;
   fb_budget_result budget_decision;
@@ -215,6 +228,23 @@ int main(void) {
     return 37;
   }
   fb_backoff_destroy(backoff);
+
+  fallback_providers[0].operation = fallback_operation;
+  fallback_providers[0].user_data = &fallback;
+  fallback_providers[0].breaker = 0;
+  fallback_providers[1].operation = fallback_operation;
+  fallback_providers[1].user_data = &fallback;
+  fallback_providers[1].breaker = 0;
+
+  if (fb_fallback_run(fallback_providers, 2, 0, &fallback_decision) != FB_OK) {
+    return 38;
+  }
+  if (!fallback_decision.succeeded || fallback_decision.provider_index != 1 || fallback_decision.failed_count != 1) {
+    return 39;
+  }
+  if (fallback.calls[0] != 1 || fallback.calls[1] != 1) {
+    return 40;
+  }
 
   puts("flowbrigade C ABI smoke test passed");
   return 0;

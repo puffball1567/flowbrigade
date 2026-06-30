@@ -17,6 +17,7 @@ The first ABI surface is intentionally narrow:
 - in-memory lock store and lease handles
 - throttle and debounce handles
 - retry execution with C callbacks
+- fallback execution with ordered C provider callbacks
 
 The ABI does not expose Nim strings, sequences, exceptions, refs, callbacks, or
 framework adapters. Callers own output buffers. FlowBrigade owns opaque handles
@@ -126,6 +127,11 @@ Retry callbacks return integer status codes. `FB_OK` means the operation
 succeeded; any other value is treated as an operation failure that may be
 retried. Exhausting attempts is reported in `fb_retry_result` rather than as an
 ABI transport error.
+
+Fallback provider callbacks follow the same status convention. `FB_OK` means the
+provider succeeded; any other status means the provider failed and the next
+provider may be tried. Exhausting providers is reported in `fb_fallback_result`
+rather than as an ABI transport error.
 
 ## Stability
 

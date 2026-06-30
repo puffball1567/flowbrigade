@@ -70,6 +70,21 @@ type
   FbRetryOperation* = proc(userData: pointer; attempt: int32): cint {.cdecl.}
   FbRetrySleep* = proc(userData: pointer; delayNs: int64; attempt: int32): cint {.cdecl.}
 
+  FbFallbackResult* {.bycopy.} = object
+    succeeded*: int32
+    attempts*: int32
+    providerIndex*: int32
+    failedCount*: int32
+    lastStatus*: int32
+
+  FbFallbackOperation* = proc(userData: pointer; providerIndex: int32): cint {.cdecl.}
+  FbFallbackPredicate* = proc(userData: pointer; status: int32; providerIndex: int32): cint {.cdecl.}
+
+  FbFallbackProvider* {.bycopy.} = object
+    operation*: FbFallbackOperation
+    userData*: pointer
+    breaker*: pointer
+
   BackoffPolicyHandle = ref object
     policy: BackoffPolicy
 
@@ -964,4 +979,76 @@ proc fb_retry_run*(
           )
           return abiInvalid("retry sleep callback returned an error")
       inc attempt
+    FB_OK
+
+proc fb_fallback_run*(
+    providers: ptr UncheckedArray[FbFallbackProvider];
+    providerCount: csize_t;
+    shouldFallback: FbFallbackPredicate;
+    outResult: ptr FbFallbackResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if providers.isNil or outResult.isNil:
+      return abiInvalid("providers and out_result must not be nil")
+    if providerCount == 0:
+      return abiInvalid("provider_count must be positive")
+    if providerCount > csize_t(int32.high):
+      return abiInvalid("provider_count is too large")
+
+    var attempts = 0'i32
+    var failedCount = 0'i32
+    var lastStatus = FB_OK
+
+    for i in 0 ..< int(providerCount):
+      let provider = providers[i]
+      if provider.operation.isNil:
+        return abiInvalid("provider operation must not be nil")
+
+      if not provider.breaker.isNil:
+        var breaker = cast[CircuitBreakerHandle](provider.breaker)
+        if not breaker.breaker.allow():
+          inc failedCount
+          lastStatus = FB_ERR_INTERNAL
+          continue
+
+      inc attempts
+      let status = provider.operation(provider.userData, int32(i))
+      if status == FB_OK:
+        if not provider.breaker.isNil:
+          var breaker = cast[CircuitBreakerHandle](provider.breaker)
+          breaker.breaker.recordSuccess()
+        outResult[] = FbFallbackResult(
+          succeeded: 1'i32,
+          attempts: attempts,
+          providerIndex: int32(i),
+          failedCount: failedCount,
+          lastStatus: status
+        )
+        return FB_OK
+
+      if not provider.breaker.isNil:
+        var breaker = cast[CircuitBreakerHandle](provider.breaker)
+        breaker.breaker.recordFailure()
+
+      inc failedCount
+      lastStatus = status
+      if not shouldFallback.isNil:
+        let shouldContinue = shouldFallback(provider.userData, status, int32(i))
+        if shouldContinue == 0:
+          outResult[] = FbFallbackResult(
+            succeeded: 0'i32,
+            attempts: attempts,
+            providerIndex: int32(i),
+            failedCount: failedCount,
+            lastStatus: status
+          )
+          return FB_OK
+
+    outResult[] = FbFallbackResult(
+      succeeded: 0'i32,
+      attempts: attempts,
+      providerIndex: -1'i32,
+      failedCount: failedCount,
+      lastStatus: lastStatus
+    )
     FB_OK

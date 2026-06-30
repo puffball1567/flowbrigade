@@ -100,6 +100,14 @@ Other callback status values are recorded as operation failures until attempts
 are exhausted. Sleep callbacks are optional and receive the computed backoff
 delay before the next attempt.
 
+## Fallback Callback ABI
+
+Fallback callback ABIs should try ordered providers until one returns the ABI
+success status. Provider failures and exhausted provider lists are result state,
+not ABI transport failures. Optional predicates can stop fallback after a
+provider failure. Optional circuit breaker handles can skip open providers and
+record provider failure or success.
+
 ## ABI Boundary
 
 Portable bindings should avoid language-specific memory ownership crossing the

@@ -216,4 +216,4 @@ API docs, tests, and recipes rather than being duplicated here.
 - `include/flowbrigade.h`: C declarations for duration, token bucket, fixed
   window, sliding window, backoff, circuit breaker, bulkhead, timeout, and
   deadline bindings, plus keyed budget ledger, lock, throttle, and debounce
-  operations and retry callback execution.
+  operations, retry callback execution, and fallback provider execution.

@@ -9,6 +9,12 @@ type RetryState = object
   failSleep: int32
   lastDelayNs: int64
 
+type FallbackState = object
+  calls: array[4, int32]
+  statuses: array[4, int32]
+  predicateCalls: int32
+  stopStatus: int32
+
 proc retryOperation(userData: pointer; attempt: int32): cint {.cdecl.} =
   let state = cast[ptr RetryState](userData)
   state.calls = attempt
@@ -29,6 +35,19 @@ proc retrySleep(userData: pointer; delayNs: int64; attempt: int32): cint {.cdecl
   if state.failSleep == 1:
     return 66.cint
   FB_OK
+
+proc fallbackOperation(userData: pointer; providerIndex: int32): cint {.cdecl.} =
+  let state = cast[ptr FallbackState](userData)
+  inc state.calls[providerIndex]
+  state.statuses[providerIndex]
+
+proc fallbackPredicate(userData: pointer; status: int32; providerIndex: int32): cint {.cdecl.} =
+  let state = cast[ptr FallbackState](userData)
+  discard providerIndex
+  inc state.predicateCalls
+  if state.stopStatus != 0 and status == state.stopStatus:
+    return 0.cint
+  1.cint
 
 suite "C ABI":
   test "reports ABI version and last error":
@@ -448,3 +467,104 @@ suite "C ABI":
     check fb_retry_run(policy, 3, nil, nil, nil, addr result) == FB_ERR_INVALID_ARGUMENT
     check fb_retry_run(policy, 3, retryOperation, nil, nil, nil) == FB_ERR_INVALID_ARGUMENT
     fb_backoff_destroy(policy)
+
+  test "fallback callback ABI tries providers in order":
+    var state = FallbackState()
+    state.statuses[0] = 7
+    state.statuses[1] = FB_OK
+    var providers = [
+      FbFallbackProvider(operation: fallbackOperation, userData: addr state, breaker: nil),
+      FbFallbackProvider(operation: fallbackOperation, userData: addr state, breaker: nil)
+    ]
+    var result: FbFallbackResult
+
+    check fb_fallback_run(cast[ptr UncheckedArray[FbFallbackProvider]](addr providers[0]), csize_t(providers.len), nil, addr result) == FB_OK
+    check result.succeeded == 1
+    check result.attempts == 2
+    check result.providerIndex == 1
+    check result.failedCount == 1
+    check result.lastStatus == FB_OK
+    check state.calls[0] == 1
+    check state.calls[1] == 1
+
+  test "fallback callback ABI reports exhausted providers and predicate stops":
+    var state = FallbackState()
+    state.statuses[0] = 7
+    state.statuses[1] = 8
+    var providers = [
+      FbFallbackProvider(operation: fallbackOperation, userData: addr state, breaker: nil),
+      FbFallbackProvider(operation: fallbackOperation, userData: addr state, breaker: nil)
+    ]
+    var result: FbFallbackResult
+    check fb_fallback_run(cast[ptr UncheckedArray[FbFallbackProvider]](addr providers[0]), csize_t(providers.len), nil, addr result) == FB_OK
+    check result.succeeded == 0
+    check result.attempts == 2
+    check result.providerIndex == -1
+    check result.failedCount == 2
+    check result.lastStatus == 8
+
+    var stoppedState = FallbackState(stopStatus: 7)
+    stoppedState.statuses[0] = 7
+    stoppedState.statuses[1] = FB_OK
+    var stoppedProviders = [
+      FbFallbackProvider(operation: fallbackOperation, userData: addr stoppedState, breaker: nil),
+      FbFallbackProvider(operation: fallbackOperation, userData: addr stoppedState, breaker: nil)
+    ]
+    check fb_fallback_run(
+      cast[ptr UncheckedArray[FbFallbackProvider]](addr stoppedProviders[0]),
+      csize_t(stoppedProviders.len),
+      fallbackPredicate,
+      addr result
+    ) == FB_OK
+    check result.succeeded == 0
+    check result.providerIndex == 0
+    check result.failedCount == 1
+    check stoppedState.calls[1] == 0
+    check stoppedState.predicateCalls == 1
+
+  test "fallback callback ABI can skip and record circuit breaker providers":
+    var breaker: pointer
+    check fb_circuit_breaker_create(1, initDuration(minutes = 1).inNanoseconds, addr breaker) == FB_OK
+    check fb_circuit_breaker_record_failure(breaker) == FB_OK
+
+    var state = FallbackState()
+    state.statuses[0] = FB_OK
+    state.statuses[1] = FB_OK
+    var providers = [
+      FbFallbackProvider(operation: fallbackOperation, userData: addr state, breaker: breaker),
+      FbFallbackProvider(operation: fallbackOperation, userData: addr state, breaker: nil)
+    ]
+    var result: FbFallbackResult
+    check fb_fallback_run(cast[ptr UncheckedArray[FbFallbackProvider]](addr providers[0]), csize_t(providers.len), nil, addr result) == FB_OK
+    check result.succeeded == 1
+    check result.providerIndex == 1
+    check result.failedCount == 1
+    check state.calls[0] == 0
+    check state.calls[1] == 1
+    fb_circuit_breaker_destroy(breaker)
+
+    check fb_circuit_breaker_create(1, initDuration(minutes = 1).inNanoseconds, addr breaker) == FB_OK
+    var failingState = FallbackState()
+    failingState.statuses[0] = 9
+    var failingProviders = [
+      FbFallbackProvider(operation: fallbackOperation, userData: addr failingState, breaker: breaker)
+    ]
+    check fb_fallback_run(cast[ptr UncheckedArray[FbFallbackProvider]](addr failingProviders[0]), csize_t(failingProviders.len), nil, addr result) == FB_OK
+    var circuitState: int32
+    check fb_circuit_breaker_state(breaker, addr circuitState) == FB_OK
+    check circuitState == FB_CIRCUIT_OPEN
+    fb_circuit_breaker_destroy(breaker)
+
+  test "fallback callback ABI rejects invalid arguments":
+    var result: FbFallbackResult
+    check fb_fallback_run(nil, 1, nil, addr result) == FB_ERR_INVALID_ARGUMENT
+    var state = FallbackState()
+    var invalidProviders = [
+      FbFallbackProvider(operation: nil, userData: addr state, breaker: nil)
+    ]
+    check fb_fallback_run(cast[ptr UncheckedArray[FbFallbackProvider]](addr invalidProviders[0]), 0, nil, addr result) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_fallback_run(cast[ptr UncheckedArray[FbFallbackProvider]](addr invalidProviders[0]), 1, nil, addr result) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_fallback_run(cast[ptr UncheckedArray[FbFallbackProvider]](addr invalidProviders[0]), 1, nil, nil) ==
+      FB_ERR_INVALID_ARGUMENT

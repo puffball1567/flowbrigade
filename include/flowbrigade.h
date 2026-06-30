@@ -75,6 +75,23 @@ typedef struct fb_retry_result {
 typedef int32_t (*fb_retry_operation)(void* user_data, int32_t attempt);
 typedef int32_t (*fb_retry_sleep)(void* user_data, int64_t delay_ns, int32_t attempt);
 
+typedef struct fb_fallback_result {
+  int32_t succeeded;
+  int32_t attempts;
+  int32_t provider_index;
+  int32_t failed_count;
+  int32_t last_status;
+} fb_fallback_result;
+
+typedef int32_t (*fb_fallback_operation)(void* user_data, int32_t provider_index);
+typedef int32_t (*fb_fallback_predicate)(void* user_data, int32_t status, int32_t provider_index);
+
+typedef struct fb_fallback_provider {
+  fb_fallback_operation operation;
+  void* user_data;
+  void* breaker;
+} fb_fallback_provider;
+
 typedef void* fb_backoff_policy;
 typedef void* fb_token_bucket;
 typedef void* fb_fixed_window;
@@ -173,6 +190,7 @@ int32_t fb_debouncer_consume_ready(fb_debouncer handle, int32_t* out_ready);
 int32_t fb_debouncer_cancel(fb_debouncer handle);
 
 int32_t fb_retry_run(fb_backoff_policy policy, int32_t max_attempts, fb_retry_operation operation, fb_retry_sleep sleep, void* user_data, fb_retry_result* out_result);
+int32_t fb_fallback_run(const fb_fallback_provider* providers, size_t provider_count, fb_fallback_predicate should_fallback, fb_fallback_result* out_result);
 
 #ifdef __cplusplus
 }

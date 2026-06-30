@@ -567,6 +567,7 @@ make gaps visible before adding new features.
 | lock store handle | create, acquire, conflict, inspect, refresh, release, release key, destroy |
 | throttle and debounce handles | create, allow/ready, reset/cancel, destroy |
 | retry callback ABI | success after retries, exhausted attempts, sleep callback failure, invalid input |
+| fallback callback ABI | ordered success, exhausted providers, predicate stop, circuit breaker skip/record, invalid input |
 | ABI metadata | `fb_abi_version` and `fb_last_error` |
 | invalid arguments | converted to `FB_ERR_INVALID_ARGUMENT` |
 | C link smoke test | builds and runs against `include/flowbrigade.h` |

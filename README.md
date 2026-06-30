@@ -539,6 +539,7 @@ The current ABI covers:
 - in-memory lock stores with opaque lease handles
 - throttle and debounce state handles
 - retry execution with C operation and sleep callbacks
+- fallback execution with ordered C provider callbacks
 
 Build the shared library:
 
