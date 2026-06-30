@@ -522,6 +522,33 @@ let downstreamTimeout = databaseDeadline.toTimeout()
 discard downstreamTimeout
 ```
 
+## Experimental C ABI
+
+FlowBrigade also exposes an experimental C ABI for small bindings in languages
+such as Zig, Odin, Rust, C, and C++.
+
+The current ABI covers:
+
+- duration parsing and formatting
+- fixed, linear, and exponential backoff delay calculation
+- token bucket, fixed window, and sliding window rate limiters
+- circuit breaker state transitions
+- bulkhead permit tracking
+
+Build the shared library:
+
+```sh
+nimble cabi
+```
+
+The C declarations live in [include/flowbrigade.h](include/flowbrigade.h).
+Call `NimMain()` once before calling `fb_*` functions from a non-Nim host
+process. The ABI uses opaque handles, caller-owned buffers, fixed structs, and
+integer status codes; Nim exceptions do not cross the boundary.
+
+See [docs/c-abi.md](docs/c-abi.md) for details and
+[docs/spec.md](docs/spec.md) for the language-neutral behavior model.
+
 ## Module Layout
 
 Most users can import everything:
