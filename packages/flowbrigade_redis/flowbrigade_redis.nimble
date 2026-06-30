@@ -1,4 +1,4 @@
-version       = "0.1.0"
+version       = "0.2.0"
 author        = "flowbrigade contributors"
 description   = "Redis storage adapter for FlowBrigade rate limiting."
 license       = "Apache-2.0"

@@ -4,7 +4,7 @@ This roadmap is intentionally conservative. FlowBrigade should stay focused on
 flow-control building blocks for API clients, workers, batch jobs, CLIs,
 workflow runtimes, and web services.
 
-## Current: v0.1.1
+## Current: v0.2.0
 
 The core package already includes:
 
@@ -25,6 +25,7 @@ The core package already includes:
 - sync and async rate-limit storage adapter surfaces
 - in-memory rate-limit storage for tests and single-process tools
 - Redis adapter package with fixed-window and token-bucket support
+- Redis-backed keyed token bucket adapter support
 - `ready` Redis client bridge package
 - experimental Memcached fixed-window adapter package
 - budget/quota ledger
@@ -44,14 +45,11 @@ The core package already includes:
   and version notes
 - thread-safe wrappers for shared in-process policies and registries
 - compile-checked recipes and adoption documentation
+- local benchmark smoke tests and optional real Redis benchmark
 - experimental C ABI with ARC default build, keyed fixed-window handles, keyed
   bulkhead handles, local limiter management helpers, callback retry/fallback,
   limiter registry operations, callback-backed stored fixed windows, metrics
   export helpers, and feature checks
-
-## Unreleased / v0.2 Candidate
-
-- Redis-backed keyed token bucket adapter support
 
 ## Next Candidates
 
@@ -60,7 +58,8 @@ These are reasonable next areas if they stay small and well-tested:
 - C ABI smoke coverage for more direct handle combinations
 - optional leak-check workflow using Valgrind or sanitizers when available
 - richer policy/config examples for non-web workers and batch runtimes
-- more benchmarks around hot limiter paths and storage adapter overhead
+- richer benchmark summaries around hot limiter paths and storage adapter
+  overhead
 - deeper adapter documentation for Redis, Memcached, and third-party client
   responsibility boundaries
 - additional Prologue adoption examples without making core web-specific

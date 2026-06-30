@@ -5,8 +5,12 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+## 0.2.0
+
+- Bumped the core package and Redis adapter package versions to `0.2.0`.
 - Added Redis-backed keyed token bucket support for distributed per-key burst
   control.
+- Added Redis adapter smoke benchmarks and an optional real Redis benchmark.
 
 ## 0.1.1
 
