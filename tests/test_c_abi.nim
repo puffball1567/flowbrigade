@@ -248,9 +248,54 @@ suite "C ABI":
 
     fb_budget_ledger_destroy(handle)
 
+  test "lock store handle manages opaque leases":
+    var store: pointer
+    check fb_lock_store_create(addr store) == FB_OK
+    check not store.isNil
+
+    var firstLease: pointer
+    var secondLease: pointer
+    var result: FbLockAcquireResult
+    check fb_lock_acquire(store, "job:1", 5, initDuration(minutes = 1).inNanoseconds, addr firstLease, addr result) == FB_OK
+    check not firstLease.isNil
+    check result.acquired == 1
+    check result.ttlNs == initDuration(minutes = 1).inNanoseconds
+
+    check fb_lock_acquire(store, "job:1", 5, initDuration(minutes = 1).inNanoseconds, addr secondLease, addr result) == FB_OK
+    check not secondLease.isNil
+    check result.acquired == 0
+
+    var status: FbLockStatus
+    check fb_lock_inspect(store, firstLease, addr status) == FB_OK
+    check status.held == 1
+    check status.expired == 0
+    check status.remainingNs > 0
+
+    check fb_lock_refresh(store, firstLease, initDuration(minutes = 2).inNanoseconds, addr result) == FB_OK
+    check result.acquired == 1
+    check result.ttlNs == initDuration(minutes = 2).inNanoseconds
+
+    var released: int32
+    check fb_lock_release(store, secondLease, addr released) == FB_OK
+    check released == 0
+    check fb_lock_release(store, firstLease, addr released) == FB_OK
+    check released == 1
+
+    var thirdLease: pointer
+    check fb_lock_acquire(store, "job:1", 5, initDuration(minutes = 1).inNanoseconds, addr thirdLease, addr result) == FB_OK
+    check result.acquired == 1
+    check fb_lock_release_key(store, "job:1", 5, addr released) == FB_OK
+    check released == 1
+
+    fb_lock_lease_destroy(firstLease)
+    fb_lock_lease_destroy(secondLease)
+    fb_lock_lease_destroy(thirdLease)
+    fb_lock_store_destroy(store)
+
   test "C ABI rejects invalid arguments as error codes":
     var result: FbRateLimitResult
     var budgetResult: FbBudgetResult
+    var lockResult: FbLockAcquireResult
     check fb_token_bucket_consume(nil, 1, addr result) == FB_ERR_INVALID_ARGUMENT
     check ($fb_last_error()).len > 0
     check fb_fixed_window_create(0, initDuration(seconds = 1).inNanoseconds, nil) ==
@@ -271,3 +316,21 @@ suite "C ABI":
     check fb_budget_consume(budgetHandle, "tenant", 6, 0, addr budgetResult) == FB_ERR_INVALID_ARGUMENT
     check fb_budget_consume(budgetHandle, "tenant", 6, 1, nil) == FB_ERR_INVALID_ARGUMENT
     fb_budget_ledger_destroy(budgetHandle)
+
+    check fb_lock_store_create(nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_lock_acquire(nil, "job", 3, initDuration(minutes = 1).inNanoseconds, nil, addr lockResult) ==
+      FB_ERR_INVALID_ARGUMENT
+    var lockStore: pointer
+    check fb_lock_store_create(addr lockStore) == FB_OK
+    var lockLease: pointer
+    check fb_lock_acquire(lockStore, nil, 0, initDuration(minutes = 1).inNanoseconds, addr lockLease, addr lockResult) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_lock_acquire(lockStore, " ", 1, initDuration(minutes = 1).inNanoseconds, addr lockLease, addr lockResult) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_lock_acquire(lockStore, "job", 3, 0, addr lockLease, addr lockResult) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_lock_release(lockStore, nil, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_lock_refresh(lockStore, nil, initDuration(minutes = 1).inNanoseconds, addr lockResult) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_lock_inspect(lockStore, nil, nil) == FB_ERR_INVALID_ARGUMENT
+    fb_lock_store_destroy(lockStore)

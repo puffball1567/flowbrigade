@@ -10,11 +10,17 @@ int main(void) {
   fb_bulkhead bulkhead = 0;
   fb_timeout timeout = 0;
   fb_budget_ledger budget = 0;
+  fb_lock_store lock_store = 0;
+  fb_lock_lease first_lease = 0;
+  fb_lock_lease second_lease = 0;
   fb_rate_limit_result decision;
   fb_bulkhead_result bulkhead_decision;
   fb_budget_result budget_decision;
+  fb_lock_acquire_result lock_decision;
+  fb_lock_status lock_status;
   int64_t delay_ns = 0;
   int32_t expired = 0;
+  int32_t released = 0;
 
   NimMain();
 
@@ -94,6 +100,45 @@ int main(void) {
     return 18;
   }
   fb_budget_ledger_destroy(budget);
+
+  if (fb_lock_store_create(&lock_store) != FB_OK) {
+    return 19;
+  }
+  if (fb_lock_acquire(lock_store, "job:1", 5, 60000000000LL, &first_lease, &lock_decision) != FB_OK) {
+    fb_lock_store_destroy(lock_store);
+    return 20;
+  }
+  if (!lock_decision.acquired) {
+    fb_lock_lease_destroy(first_lease);
+    fb_lock_store_destroy(lock_store);
+    return 21;
+  }
+  if (fb_lock_acquire(lock_store, "job:1", 5, 60000000000LL, &second_lease, &lock_decision) != FB_OK) {
+    fb_lock_lease_destroy(first_lease);
+    fb_lock_store_destroy(lock_store);
+    return 22;
+  }
+  if (lock_decision.acquired) {
+    fb_lock_lease_destroy(first_lease);
+    fb_lock_lease_destroy(second_lease);
+    fb_lock_store_destroy(lock_store);
+    return 23;
+  }
+  if (fb_lock_inspect(lock_store, first_lease, &lock_status) != FB_OK || !lock_status.held) {
+    fb_lock_lease_destroy(first_lease);
+    fb_lock_lease_destroy(second_lease);
+    fb_lock_store_destroy(lock_store);
+    return 24;
+  }
+  if (fb_lock_release(lock_store, first_lease, &released) != FB_OK || !released) {
+    fb_lock_lease_destroy(first_lease);
+    fb_lock_lease_destroy(second_lease);
+    fb_lock_store_destroy(lock_store);
+    return 25;
+  }
+  fb_lock_lease_destroy(first_lease);
+  fb_lock_lease_destroy(second_lease);
+  fb_lock_store_destroy(lock_store);
 
   puts("flowbrigade C ABI smoke test passed");
   return 0;

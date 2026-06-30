@@ -536,6 +536,7 @@ The current ABI covers:
 - bulkhead permit tracking
 - timeout/deadline checks and remaining-time helpers
 - budget ledger quota checks, refunds, and resets
+- in-memory lock stores with opaque lease handles
 
 Build the shared library:
 

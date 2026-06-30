@@ -564,6 +564,7 @@ make gaps visible before adding new features.
 | bulkhead handle | create, inspect, acquire, release, destroy |
 | timeout and deadline handles | create, expired, elapsed/remaining, clamp, destroy |
 | budget ledger handle | create, inspect, consume, denial, refund, reset, reset all, destroy |
+| lock store handle | create, acquire, conflict, inspect, refresh, release, release key, destroy |
 | ABI metadata | `fb_abi_version` and `fb_last_error` |
 | invalid arguments | converted to `FB_ERR_INVALID_ARGUMENT` |
 | C link smoke test | builds and runs against `include/flowbrigade.h` |

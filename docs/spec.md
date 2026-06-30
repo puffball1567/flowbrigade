@@ -78,6 +78,13 @@ usage without going below zero, and reset helpers clear one key or the whole
 ledger. Portable bindings should copy caller-owned key bytes during the call and
 avoid storing foreign string pointers.
 
+## Locks
+
+Locks use a key, TTL, and lease token. Acquiring an already-held key returns a
+non-acquired lease result. Releasing by lease must not clear a newer lock with a
+different token. Portable bindings should keep lease tokens behind language-owned
+or opaque handles and expose explicit lease cleanup.
+
 ## ABI Boundary
 
 Portable bindings should avoid language-specific memory ownership crossing the

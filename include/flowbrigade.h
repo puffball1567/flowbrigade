@@ -53,6 +53,18 @@ typedef struct fb_budget_result {
   int64_t reset_after_ns;
 } fb_budget_result;
 
+typedef struct fb_lock_acquire_result {
+  int32_t acquired;
+  int64_t ttl_ns;
+} fb_lock_acquire_result;
+
+typedef struct fb_lock_status {
+  int32_t held;
+  int32_t expired;
+  int64_t ttl_ns;
+  int64_t remaining_ns;
+} fb_lock_status;
+
 typedef void* fb_backoff_policy;
 typedef void* fb_token_bucket;
 typedef void* fb_fixed_window;
@@ -62,6 +74,8 @@ typedef void* fb_bulkhead;
 typedef void* fb_timeout;
 typedef void* fb_deadline;
 typedef void* fb_budget_ledger;
+typedef void* fb_lock_store;
+typedef void* fb_lock_lease;
 
 void NimMain(void);
 
@@ -124,6 +138,15 @@ int32_t fb_budget_consume(fb_budget_ledger handle, const char* key, size_t key_l
 int32_t fb_budget_refund(fb_budget_ledger handle, const char* key, size_t key_len, int64_t amount, fb_budget_result* out_result);
 int32_t fb_budget_reset(fb_budget_ledger handle, const char* key, size_t key_len, fb_budget_result* out_result);
 int32_t fb_budget_reset_all(fb_budget_ledger handle);
+
+int32_t fb_lock_store_create(fb_lock_store* out_handle);
+void fb_lock_store_destroy(fb_lock_store handle);
+void fb_lock_lease_destroy(fb_lock_lease handle);
+int32_t fb_lock_acquire(fb_lock_store handle, const char* key, size_t key_len, int64_t ttl_ns, fb_lock_lease* out_lease, fb_lock_acquire_result* out_result);
+int32_t fb_lock_release(fb_lock_store handle, fb_lock_lease lease, int32_t* out_released);
+int32_t fb_lock_release_key(fb_lock_store handle, const char* key, size_t key_len, int32_t* out_released);
+int32_t fb_lock_refresh(fb_lock_store handle, fb_lock_lease lease, int64_t ttl_ns, fb_lock_acquire_result* out_result);
+int32_t fb_lock_inspect(fb_lock_store handle, fb_lock_lease lease, fb_lock_status* out_status);
 
 #ifdef __cplusplus
 }

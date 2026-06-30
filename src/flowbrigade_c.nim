@@ -5,6 +5,7 @@ import flowbrigade/budget
 import flowbrigade/bulkhead
 import flowbrigade/circuit_breaker
 import flowbrigade/durations
+import flowbrigade/locks
 import flowbrigade/ratelimit
 import flowbrigade/timeout
 
@@ -48,6 +49,16 @@ type
     retryAfterNs*: int64
     resetAfterNs*: int64
 
+  FbLockAcquireResult* {.bycopy.} = object
+    acquired*: int32
+    ttlNs*: int64
+
+  FbLockStatus* {.bycopy.} = object
+    held*: int32
+    expired*: int32
+    ttlNs*: int64
+    remainingNs*: int64
+
   BackoffPolicyHandle = ref object
     policy: BackoffPolicy
 
@@ -74,6 +85,12 @@ type
 
   BudgetLedgerHandle = ref object
     ledger: BudgetLedger
+
+  LockStoreHandle = ref object
+    store: LockStore
+
+  LockLeaseHandle = ref object
+    lease: LockAcquireResult
 
 var lastAbiError = ""
 
@@ -139,6 +156,26 @@ proc writeBudgetResult(outResult: ptr FbBudgetResult; decision: BudgetResult): c
   )
   FB_OK
 
+proc writeLockAcquireResult(outResult: ptr FbLockAcquireResult; decision: LockAcquireResult): cint =
+  if outResult.isNil:
+    return abiInvalid("out_result must not be nil")
+  outResult[] = FbLockAcquireResult(
+    acquired: (if decision.acquired: 1'i32 else: 0'i32),
+    ttlNs: decision.ttl.inNanoseconds
+  )
+  FB_OK
+
+proc writeLockStatus(outStatus: ptr FbLockStatus; status: LockLeaseStatus): cint =
+  if outStatus.isNil:
+    return abiInvalid("out_status must not be nil")
+  outStatus[] = FbLockStatus(
+    held: (if status.held: 1'i32 else: 0'i32),
+    expired: (if status.expired: 1'i32 else: 0'i32),
+    ttlNs: status.ttl.inNanoseconds,
+    remainingNs: status.remaining.inNanoseconds
+  )
+  FB_OK
+
 proc jitterFromAbi(value: int32): JitterKind =
   case value
   of FB_NO_JITTER: noJitter
@@ -153,6 +190,9 @@ template catchAbiErrors(body: untyped): cint =
   try:
     body
   except ValueError as exc:
+    setLastError(exc.msg)
+    FB_ERR_INVALID_ARGUMENT
+  except FlowLockError as exc:
     setLastError(exc.msg)
     FB_ERR_INVALID_ARGUMENT
   except CatchableError as exc:
@@ -677,3 +717,92 @@ proc fb_budget_reset_all*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
     var state = cast[BudgetLedgerHandle](handle)
     state.ledger.resetAll()
     FB_OK
+
+proc fb_lock_store_create*(outHandle: ptr pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = LockStoreHandle(store: initInMemoryLockStore().asLockStore())
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_lock_store_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[LockStoreHandle](handle))
+
+proc fb_lock_lease_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[LockLeaseHandle](handle))
+
+proc fb_lock_acquire*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    ttlNs: int64;
+    outLease: ptr pointer;
+    outResult: ptr FbLockAcquireResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outLease.isNil:
+      return abiInvalid("handle and out_lease must not be nil")
+    var state = cast[LockStoreHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    let decision = state.store.acquire(copiedKey, durationFromNanos(ttlNs))
+    let lease = LockLeaseHandle(lease: decision)
+    GC_ref(lease)
+    outLease[] = cast[pointer](lease)
+    writeLockAcquireResult(outResult, decision)
+
+proc fb_lock_release*(
+    handle: pointer;
+    lease: pointer;
+    outReleased: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or lease.isNil or outReleased.isNil:
+      return abiInvalid("handle, lease, and out_released must not be nil")
+    var state = cast[LockStoreHandle](handle)
+    let leaseState = cast[LockLeaseHandle](lease)
+    outReleased[] = (if state.store.release(leaseState.lease): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_lock_release_key*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outReleased: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outReleased.isNil:
+      return abiInvalid("handle and out_released must not be nil")
+    var state = cast[LockStoreHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outReleased[] = (if state.store.release(copiedKey): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_lock_refresh*(
+    handle: pointer;
+    lease: pointer;
+    ttlNs: int64;
+    outResult: ptr FbLockAcquireResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or lease.isNil:
+      return abiInvalid("handle and lease must not be nil")
+    var state = cast[LockStoreHandle](handle)
+    var leaseState = cast[LockLeaseHandle](lease)
+    leaseState.lease = state.store.refresh(leaseState.lease, durationFromNanos(ttlNs))
+    writeLockAcquireResult(outResult, leaseState.lease)
+
+proc fb_lock_inspect*(
+    handle: pointer;
+    lease: pointer;
+    outStatus: ptr FbLockStatus
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or lease.isNil:
+      return abiInvalid("handle and lease must not be nil")
+    var state = cast[LockStoreHandle](handle)
+    let leaseState = cast[LockLeaseHandle](lease)
+    writeLockStatus(outStatus, state.store.inspect(leaseState.lease))
