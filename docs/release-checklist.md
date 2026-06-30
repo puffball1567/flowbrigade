@@ -21,6 +21,8 @@ nim r --nimcache:/tmp/flowbrigade-nimcache -p:src tests/all.nim
 nim check --nimcache:/tmp/flowbrigade-nimcache -p:src src/flowbrigade.nim
 nim doc --nimcache:/tmp/flowbrigade-nimcache -p:src --outdir:/tmp/flowbrigade-docs src/flowbrigade.nim
 nimble --nimbleDir:/tmp/flowbrigade-nimble --useSystemNim check
+nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim cabi
+gcc -Iinclude tests/c_abi_smoke.c -L/tmp -lflowbrigade -Wl,-rpath,/tmp -o /tmp/flowbrigade-c-abi-smoke && /tmp/flowbrigade-c-abi-smoke
 nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim benchmark
 nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim snippets
 nim r --nimcache:/tmp/flowbrigade-redis-nimcache -p:packages/flowbrigade_redis/src -p:src packages/flowbrigade_redis/tests/test_flowbrigade_redis.nim
@@ -62,6 +64,8 @@ nimble --nimbleDir:/tmp/flowbrigade-nimble --offline --nim:/path/to/nim test
 - New behavior is listed in `docs/test-matrix.md`.
 - Supported and experimental areas are listed in `docs/support-matrix.md`.
 - Compatibility expectations are listed in `docs/api-stability.md`.
+- Experimental C ABI declarations stay synchronized with
+  `src/flowbrigade_c.nim`.
 
 ## Documentation
 

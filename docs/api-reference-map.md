@@ -209,3 +209,9 @@ API docs, tests, and recipes rather than being duplicated here.
   rate-limit middleware, login/password-reset guards, deadline middleware,
   method-scoped limits, request key helpers, compound key extraction, and
   INI-style config file helpers.
+
+## C ABI
+
+- `src/flowbrigade_c.nim`: experimental C ABI implementation.
+- `include/flowbrigade.h`: C declarations for duration, token bucket, fixed
+  window, and circuit breaker bindings.

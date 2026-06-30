@@ -41,6 +41,7 @@ This document defines what is currently supported and what is experimental.
 | Control diagnostics / policy hints | Supported |
 | Metric event conversion | Supported |
 | Observability export helpers | Supported |
+| C ABI layer | Experimental |
 | Internal time source | Internal test support |
 
 ## Storage Surfaces

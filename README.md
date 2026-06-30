@@ -70,6 +70,7 @@ if limiter.allow():
 - Use sync or async storage-backed fixed-window rate limiting
 - Use separate Redis, Memcached, and client bridge packages when distributed
   state is needed
+- Build the experimental C ABI layer for non-Nim bindings
 
 ## When To Use What
 
@@ -590,5 +591,6 @@ See [docs/test-matrix.md](docs/test-matrix.md) for the current test coverage map
 See [docs/support-matrix.md](docs/support-matrix.md) for supported areas.
 See [docs/api-stability.md](docs/api-stability.md) for compatibility policy.
 See [docs/local-services.md](docs/local-services.md) for local Redis and Memcached verification.
+See [docs/c-abi.md](docs/c-abi.md) for the experimental C ABI surface.
 See [docs/release-checklist.md](docs/release-checklist.md) before publishing.
 See [SECURITY.md](SECURITY.md) for security scope and operational limits.

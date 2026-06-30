@@ -3,7 +3,7 @@ author        = "flowbrigade contributors"
 description   = "Flow control utilities for Nim."
 license       = "Apache-2.0"
 srcDir        = "src"
-installExt    = @["nim"]
+installExt    = @["nim", "h"]
 skipDirs      = @[
   ".github",
   "benchmarks",
@@ -22,6 +22,9 @@ task test, "Run the test suite":
 
 task benchmark, "Run local benchmark smoke tests":
   exec "nim r --nimcache:/tmp/flowbrigade-nimcache -d:release -p:src benchmarks/core_bench.nim"
+
+task cabi, "Build the experimental C ABI shared library":
+  exec "nim c --app:lib --nimcache:/tmp/flowbrigade-cabi-nimcache -p:src --out:/tmp/libflowbrigade.so src/flowbrigade_c.nim"
 
 task snippets, "Check README snippets and dependency-free recipes":
   exec "nim check --nimcache:/tmp/flowbrigade-nimcache -p:src snippets/readme_quick_start.nim"

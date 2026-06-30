@@ -49,3 +49,4 @@ import ./test_control_diagnostics
 import ./test_observability
 import ./test_fallback
 import ./test_fallback_async
+import ./test_c_abi

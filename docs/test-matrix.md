@@ -550,6 +550,18 @@ make gaps visible before adding new features.
 | conversion to timeout | covered |
 | conversion from expired deadline | expired immediately |
 
+## C ABI
+
+| Area | Covered |
+| --- | --- |
+| duration parse | returns nanoseconds and error codes |
+| duration format | writes caller-owned buffers and reports required length |
+| token bucket handle | create, consume, denial metadata, destroy |
+| fixed window handle | create, inspect, consume, denial, destroy |
+| circuit breaker handle | create, allow, record failure, state, destroy |
+| invalid arguments | converted to `FB_ERR_INVALID_ARGUMENT` |
+| C link smoke test | builds and runs against `include/flowbrigade.h` |
+
 ## Known gaps
 
 - `retry` currently requires an explicit sleep proc.

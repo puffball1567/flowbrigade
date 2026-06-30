@@ -58,6 +58,14 @@ jobs:
       - name: Run tests
         run: nim r -p:src tests/all.nim
 
+      - name: Build C ABI library
+        run: nim c --app:lib -p:src --out:/tmp/libflowbrigade.so src/flowbrigade_c.nim
+
+      - name: Run C ABI smoke test
+        run: |
+          gcc -Iinclude tests/c_abi_smoke.c -L/tmp -lflowbrigade -Wl,-rpath,/tmp -o /tmp/flowbrigade-c-abi-smoke
+          /tmp/flowbrigade-c-abi-smoke
+
       - name: Run Redis adapter unit tests
         run: nim r -p:packages/flowbrigade_redis/src -p:src packages/flowbrigade_redis/tests/test_flowbrigade_redis.nim
 
