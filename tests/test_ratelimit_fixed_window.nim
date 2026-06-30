@@ -57,6 +57,36 @@ suite "fixed window rate limiter":
     check limiter.allow(cost = 2)
     check not limiter.allow()
 
+  test "exposes fixed window configuration and usage":
+    let time = initManualTimeSource()
+    var limiter = initFixedWindow(
+      limit = 5,
+      per = initDuration(seconds = 10),
+      timeSource = time
+    )
+
+    check limiter.configuredLimit() == 5
+    check limiter.configuredPeriod() == initDuration(seconds = 10)
+    check limiter.inUse() == 0
+
+    check limiter.allow(cost = 3)
+    check limiter.inUse() == 3
+
+  test "reset clears fixed window usage":
+    let time = initManualTimeSource()
+    var limiter = initFixedWindow(
+      limit = 2,
+      per = initDuration(seconds = 1),
+      timeSource = time
+    )
+
+    check limiter.allow(cost = 2)
+    check limiter.inUse() == 2
+    check not limiter.allow()
+    limiter.reset()
+    check limiter.inUse() == 0
+    check limiter.allow(cost = 2)
+
   test "rejects invalid fixed window configuration":
     let time = initManualTimeSource()
 

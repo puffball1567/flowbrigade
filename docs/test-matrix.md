@@ -130,8 +130,15 @@ make gaps visible before adding new features.
 | result metadata | covered | covered | covered | covered |
 | inspect without consume | covered | covered | covered | covered |
 | retry/reset timing | covered | covered | covered | covered |
+| explicit reset | covered | covered | covered | covered |
+| configuration introspection | covered | covered | covered | covered |
+| local state introspection | covered | covered | covered | covered |
 | independent keys | not applicable | not applicable | not applicable | covered |
 | non-string keys | not applicable | not applicable | not applicable | covered |
+| unsafe string keys | not applicable | not applicable | not applicable | rejected |
+| clear/reset one key | not applicable | not applicable | not applicable | covered |
+| reset all keys | not applicable | not applicable | not applicable | covered |
+| inspect does not retain new keys | not applicable | not applicable | not applicable | covered |
 | max key capacity | not applicable | not applicable | not applicable | covered |
 | expired key pruning | not applicable | not applicable | not applicable | covered |
 
@@ -178,6 +185,10 @@ make gaps visible before adding new features.
 | Multi-tenant quota bundle | covered |
 | Merge into caller registry | covered |
 | Optional component initializers | covered |
+| Validation report | covered |
+| Required optional components | covered |
+| Missing primary limiter | reported |
+| Invalid optional policy values | reported |
 | Invalid policy inputs | rejected |
 
 ## Control diagnostics
@@ -353,6 +364,14 @@ make gaps visible before adding new features.
 | scoped helper releases after success | covered |
 | scoped helper releases after failure | covered |
 | scoped helper raises when full | covered |
+| keyed independent capacity | covered |
+| keyed release and clear | covered |
+| keyed active entry count | covered |
+| keyed scoped helper | covered |
+| keyed non-string keys | covered |
+| keyed blank key | rejected |
+| keyed control-character key | rejected |
+| keyed max key capacity | rejected |
 
 ## Lock store
 

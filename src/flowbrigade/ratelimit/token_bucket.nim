@@ -96,3 +96,22 @@ proc consume*(limiter: var TokenBucket; cost = 1): RateLimitResult =
 
 proc allow*(limiter: var TokenBucket; cost = 1): bool =
   limiter.consume(cost).allowed
+
+proc reset*(limiter: var TokenBucket) =
+  ## Restores the bucket to full burst capacity and restarts refill tracking.
+  limiter.tokens = float(limiter.burst)
+  limiter.lastRefill = limiter.timeSource.now()
+
+proc configuredRate*(limiter: TokenBucket): int =
+  limiter.rate
+
+proc configuredPeriod*(limiter: TokenBucket): Duration =
+  limiter.per
+
+proc configuredBurst*(limiter: TokenBucket): int =
+  limiter.burst
+
+proc availableTokens*(limiter: var TokenBucket): int =
+  ## Returns currently available whole tokens after applying refill.
+  limiter.refill()
+  int(floor(limiter.tokens))

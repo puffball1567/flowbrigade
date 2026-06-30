@@ -19,7 +19,7 @@ controls.
 | Per-task or workflow time budget | `Deadline`, `childDeadline`, `clamp` |
 | Limit calls to shared services | `TokenBucket`, `FixedWindow`, `StoredFixedWindow` |
 | Per-tenant or per-project allowance | `BudgetLedger` |
-| Limit local worker concurrency | `Bulkhead` |
+| Limit local worker concurrency | `Bulkhead`, or `KeyedBulkhead` for per-class ceilings |
 | Stop calling a failing dependency | `CircuitBreaker` |
 | Protect a named critical section | `LockStore` |
 | Export runtime control signals | `MetricEvent`, `toJsonLines`, `toPrometheusText` |
@@ -149,7 +149,8 @@ keys, costs, and decisions around the adapter.
 
 1. Wrap one task type with `retry` and a `Deadline`.
 2. Add `Bulkhead` if the worker can overload local CPU, memory, or file
-   handles.
+   handles. Use `KeyedBulkhead` when each tenant, queue, or job class needs a
+   separate local concurrency ceiling.
 3. Add `CircuitBreaker` around external services or shared filesystems.
 4. Add `BudgetLedger` if tenants, projects, or job classes have allowances.
 5. Move repeated limits into `LimiterRegistry`.

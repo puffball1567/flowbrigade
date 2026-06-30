@@ -61,6 +61,38 @@ suite "token bucket rate limiter":
     check limiter.allow(cost = 6)
     check not limiter.allow()
 
+  test "exposes token bucket configuration and available tokens":
+    let time = initManualTimeSource()
+    var limiter = initTokenBucket(
+      rate = 2,
+      per = initDuration(seconds = 1),
+      burst = 4,
+      timeSource = time
+    )
+
+    check limiter.configuredRate() == 2
+    check limiter.configuredPeriod() == initDuration(seconds = 1)
+    check limiter.configuredBurst() == 4
+    check limiter.availableTokens() == 4
+
+    check limiter.allow(cost = 3)
+    check limiter.availableTokens() == 1
+
+  test "reset restores token bucket burst capacity":
+    let time = initManualTimeSource()
+    var limiter = initTokenBucket(
+      rate = 1,
+      per = initDuration(seconds = 1),
+      burst = 2,
+      timeSource = time
+    )
+
+    check limiter.allow(cost = 2)
+    check not limiter.allow()
+    limiter.reset()
+    check limiter.availableTokens() == 2
+    check limiter.allow(cost = 2)
+
   test "rejects invalid token bucket configuration":
     let time = initManualTimeSource()
 

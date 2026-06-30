@@ -77,3 +77,18 @@ proc consume*(limiter: var FixedWindow; cost = 1): RateLimitResult =
 
 proc allow*(limiter: var FixedWindow; cost = 1): bool =
   limiter.consume(cost).allowed
+
+proc reset*(limiter: var FixedWindow) =
+  ## Clears the current window usage and starts a fresh local window.
+  limiter.used = 0
+  limiter.windowStart = limiter.timeSource.now()
+
+proc configuredLimit*(limiter: FixedWindow): int =
+  limiter.limit
+
+proc configuredPeriod*(limiter: FixedWindow): Duration =
+  limiter.per
+
+proc inUse*(limiter: var FixedWindow): int =
+  limiter.resetIfNeeded()
+  limiter.used

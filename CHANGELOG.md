@@ -16,6 +16,11 @@ work so the first public release has a clear history.
 - Added token bucket, fixed window, sliding window, keyed fixed window, and
   compound rate limiters.
 - Added rate-limit result metadata and non-consuming `inspect`.
+- Added local limiter reset, configuration introspection, and state
+  introspection helpers for token bucket, fixed window, sliding window, and
+  keyed fixed window limiters.
+- Added keyed fixed-window clear/reset operations, retained-key counting, and
+  unsafe string key rejection.
 - Added HTTP rate-limit header helpers.
 - Added sync and async wait helpers.
 - Added validated rate-limit key builders.
@@ -59,6 +64,9 @@ work so the first public release has a clear history.
 - Added practical policy builders for API abuse protection, login protection,
   password reset throttling, third-party API clients, worker backpressure, and
   multi-tenant quotas.
+- Added policy validation reports for startup checks and config dry-runs.
+- Added keyed in-process bulkheads for per-tenant, per-queue, or per-job-class
+  concurrency ceilings.
 - Added opt-in control diagnostics that analyze caller-provided control signals
   and return advice-only policy hints without changing settings automatically.
 - Added observability export helpers for JSON lines, Prometheus-style text, and

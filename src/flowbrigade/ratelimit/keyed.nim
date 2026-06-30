@@ -1,4 +1,4 @@
-import std/[tables, times]
+import std/[strutils, tables, times]
 
 import ../internal/time_source
 import ./errors
@@ -64,6 +64,19 @@ proc validateCost[K](limiter: KeyedFixedWindow[K]; cost: int) =
   if cost > limiter.limit:
     raise newException(RateLimitError, "cost must not exceed window limit")
 
+proc validateKey(key: string) =
+  if key.len == 0:
+    raise newException(RateLimitError, "key must not be empty")
+  if key.strip().len == 0:
+    raise newException(RateLimitError, "key must not be blank")
+  for ch in key:
+    if ord(ch) < 32 or ord(ch) == 127:
+      raise newException(RateLimitError, "key must not contain control characters")
+
+proc validateKey[K](key: K) =
+  when K is string:
+    validateKey(key)
+
 proc ensureKeyCapacity[K](limiter: var KeyedFixedWindow[K]; key: K; current: Duration) =
   let isNewKey = not limiter.entries.hasKey(key)
   if isNewKey and limiter.entries.len >= limiter.maxKeys:
@@ -109,6 +122,7 @@ proc inspect*[K](
     cost = 1
 ): RateLimitResult =
   limiter.validateCost(cost)
+  validateKey(key)
   let current = limiter.timeSource.now()
   limiter.ensureKeyCapacity(key, current)
   let state = limiter.currentState(key, current)
@@ -131,3 +145,37 @@ proc consume*[K](
 
 proc allow*[K](limiter: var KeyedFixedWindow[K]; key: K; cost = 1): bool =
   limiter.consume(key, cost).allowed
+
+proc pruneExpired*[K](limiter: var KeyedFixedWindow[K]) =
+  ## Removes keys whose fixed window has already expired.
+  limiter.pruneExpired(limiter.timeSource.now())
+
+proc activeKeys*[K](limiter: var KeyedFixedWindow[K]): int =
+  ## Returns the number of currently retained key states after pruning expired
+  ## windows.
+  limiter.pruneExpired()
+  limiter.entries.len
+
+proc clear*[K](limiter: var KeyedFixedWindow[K]; key: K): bool =
+  ## Clears one key's in-memory window state.
+  validateKey(key)
+  result = limiter.entries.hasKey(key)
+  limiter.entries.del(key)
+
+proc reset*[K](limiter: var KeyedFixedWindow[K]; key: K): bool =
+  ## Alias for `clear` when the caller thinks in rate-limit reset terms.
+  limiter.clear(key)
+
+proc resetAll*[K](limiter: var KeyedFixedWindow[K]): int =
+  ## Clears every retained key and returns the number of removed entries.
+  result = limiter.entries.len
+  limiter.entries.clear()
+
+proc configuredLimit*[K](limiter: KeyedFixedWindow[K]): int =
+  limiter.limit
+
+proc configuredPeriod*[K](limiter: KeyedFixedWindow[K]): Duration =
+  limiter.per
+
+proc keyCapacity*[K](limiter: KeyedFixedWindow[K]): int =
+  limiter.maxKeys

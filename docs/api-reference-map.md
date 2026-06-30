@@ -43,6 +43,14 @@ API docs, tests, and recipes rather than being duplicated here.
   and bulkhead config.
 - `multiTenantQuotaPolicy`: burst limiter plus longer-period budget config.
 - `consume`, `inspect`, `allow`: use the policy's primary limiter.
+- `validate`: return a non-throwing report for startup checks and config
+  dry-runs.
+- `requireValid`: validate a policy and raise `FlowPolicyConfigError` on the
+  first issue.
+- `require`: validate that optional policy parts such as quota, retry,
+  circuit-breaker, or bulkhead config are present.
+- `FlowPolicyValidationReport`, `FlowPolicyValidationIssue`,
+  `FlowPolicyRequirement`: validation result shapes.
 - `initBudgetLedger(policy)`, `initCircuitBreaker(policy)`,
   `initBulkhead(policy)`: initialize optional runtime objects when present.
 - `mergeInto`: copy policy limiters into a caller-owned registry.
@@ -130,6 +138,14 @@ API docs, tests, and recipes rather than being duplicated here.
 - `inspect`: check without consuming capacity.
 - `consume`: check and consume capacity.
 - `allow`: boolean convenience wrapper around `consume`.
+- `reset`: clear local token bucket, fixed window, sliding window, or one
+  keyed fixed-window entry.
+- `clear` and `resetAll`: remove keyed fixed-window entries.
+- `activeKeys`: count retained keyed fixed-window entries after pruning expired
+  windows.
+- `configuredRate`, `configuredLimit`, `configuredPeriod`,
+  `configuredBurst`, `keyCapacity`: inspect local limiter configuration.
+- `availableTokens`, `inUse`, `currentWindowUse`: inspect local limiter state.
 - `rateLimitHeaders` and `retryAfterSeconds`: HTTP response metadata helpers.
 - `httpLimitDecision`: framework-neutral HTTP status/body/header data.
 - `RateLimitExceededError`, `raiseIfDenied`, `remainingOrRaise`: typed
@@ -184,6 +200,9 @@ API docs, tests, and recipes rather than being duplicated here.
   propagation through `Deadline`, `childDeadline`, `clamp`, and `toTimeout`.
 - `pkg/flowbrigade/bulkhead`: limit concurrent in-process work with explicit
   acquire/release or `withBulkhead`.
+- `initKeyedBulkhead`: apply a local concurrency ceiling per tenant, queue,
+  worker pool, or job class key.
+- `activeKeys` and `clear`: inspect or clear active keyed bulkhead entries.
 - `pkg/flowbrigade/locks`: framework-neutral lock store contract with
   lease-token release, lease refresh, lease inspection, in-memory
   test/single-process storage, and `withLock`.

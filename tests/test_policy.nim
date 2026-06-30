@@ -108,6 +108,63 @@ suite "flow policies":
     check registry.hasLimiter("login_account")
     check registry.hasLimiter("login_identity")
 
+  test "policies produce validation reports":
+    let policy = workerBackpressurePolicy(
+      name = "worker",
+      rate = 2,
+      per = 1.sec,
+      burst = 4,
+      concurrency = 3
+    )
+
+    let report = policy.validate()
+    check report.valid
+    check report.policyName == "worker"
+    check report.limiterCount == 1
+    check report.hasRetry
+    check report.hasCircuitBreaker
+    check report.hasBulkhead
+    check not report.hasQuota
+    check report.issues.len == 0
+
+    let required = policy.require([fprRetry, fprCircuitBreaker, fprBulkhead])
+    check required.valid
+
+  test "policy validation reports missing or required components":
+    var registry = initLimiterRegistry()
+    registry.addLimiter("present", fixedWindowDefinition(limit = 1, per = 1.min))
+    let broken = initFlowPolicy(
+      kind = fpkWorkerBackpressure,
+      name = "broken",
+      primaryLimiter = "missing",
+      registry = registry
+    )
+
+    let report = broken.validate()
+    check not report.valid
+    check report.issues.len == 1
+    check report.issues[0].kind == fpviMissingLimiter
+    check report.issues[0].path == "primaryLimiter"
+    expect FlowPolicyConfigError:
+      discard broken.requireValid()
+
+    let policy = apiAbuseProtectionPolicy()
+    expect FlowPolicyConfigError:
+      discard policy.require([fprQuota])
+    expect FlowPolicyConfigError:
+      discard policy.require([fprRetry])
+
+  test "policy validation reports invalid optional values":
+    var policy = workerBackpressurePolicy()
+    policy.bulkheadCapacity = -1
+
+    let report = policy.validate()
+
+    check not report.valid
+    check report.issues.len == 1
+    check report.issues[0].kind == fpviInvalidBulkhead
+    check report.issues[0].path == "bulkheadCapacity"
+
   test "optional component initializers reject policies without that component":
     let policy = apiAbuseProtectionPolicy()
 

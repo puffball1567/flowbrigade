@@ -33,11 +33,13 @@ This document defines what is currently supported and what is experimental.
 | Timeout | Supported |
 | Deadline composition | Supported |
 | Bulkhead | Supported |
+| Keyed bulkhead | Supported |
 | Lock store contract | Supported |
 | Lock lease refresh and inspection | Supported |
 | Config objects | Supported |
 | Policy presets | Supported |
 | Practical policy builders | Supported |
+| Policy validation reports | Supported |
 | Control diagnostics / policy hints | Supported |
 | Metric event conversion | Supported |
 | Observability export helpers | Supported |

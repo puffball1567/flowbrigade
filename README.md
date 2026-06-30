@@ -45,15 +45,17 @@ if limiter.allow():
 - Fall back to secondary providers in a controlled order, sync or async
 - Limit repeated actions with token bucket and fixed window limiters
 - Limit actions per key with an in-memory keyed fixed window limiter
+- Reset or inspect local limiter state for tests, admin actions, and recovery
 - Track per-key usage budgets and quotas over fixed periods
 - Throttle repeated actions
 - Debounce bursts of repeated signals
 - Stop calling failing operations with a circuit breaker
 - Track simple timeouts, deadlines, and remaining time
-- Limit concurrent work with a bulkhead
+- Limit concurrent work globally or per key with bulkheads
 - Build common policies from config objects or presets
 - Start from practical policy bundles for login, API abuse, API clients,
   workers, and tenant quotas
+- Validate policy bundles before startup or config rollout
 - Analyze recent control signals and return opt-in policy hints without
   changing settings automatically
 - Convert metrics and control reports into JSON lines or Prometheus-style text
@@ -85,6 +87,7 @@ if limiter.allow():
 | Track usage quota or budget per tenant/API key | `BudgetLedger` |
 | Smooth boundary spikes | `SlidingWindow` |
 | Limit per user/API key/job | `KeyedFixedWindow` or stored fixed-window keys |
+| Clear local limiter state | `reset`, `clear`, or `resetAll` |
 | Combine global and per-key limits | `CompoundLimiter` |
 | Manage configured named limits | `LimiterRegistry` |
 | Build keys from app request data | `KeyExtractor` |
@@ -96,7 +99,8 @@ if limiter.allow():
 | Raise on denial | `raiseIfDenied` or `remainingOrRaise` |
 | Share limits across processes | `flowbrigade_redis` or a storage adapter |
 | Stop calling a failing dependency | `CircuitBreaker` |
-| Limit concurrent in-process work | `Bulkhead` |
+| Limit concurrent in-process work | `Bulkhead` or `KeyedBulkhead` |
+| Validate configured policy bundles | `validate`, `requireValid`, or `require` |
 | Share an overall time budget across nested work | `Deadline`, `childDeadline`, `clamp` |
 | Coordinate named critical sections | `LockStore`, `withLock`, `refresh`, `inspect` |
 | Drop repeated actions until quiet | `Debouncer` |

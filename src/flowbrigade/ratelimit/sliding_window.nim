@@ -113,3 +113,19 @@ proc consume*(limiter: var SlidingWindow; cost = 1): RateLimitResult =
 
 proc allow*(limiter: var SlidingWindow; cost = 1): bool =
   limiter.consume(cost).allowed
+
+proc reset*(limiter: var SlidingWindow) =
+  ## Clears weighted usage and starts a fresh local window.
+  limiter.previousUsed = 0
+  limiter.currentUsed = 0
+  limiter.windowStart = limiter.timeSource.now()
+
+proc configuredLimit*(limiter: SlidingWindow): int =
+  limiter.limit
+
+proc configuredPeriod*(limiter: SlidingWindow): Duration =
+  limiter.per
+
+proc currentWindowUse*(limiter: var SlidingWindow): int =
+  limiter.shiftWindows()
+  limiter.currentUsed

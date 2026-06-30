@@ -26,12 +26,14 @@ Web 専用ではありません。API client、CLI、worker、batch job、Web se
 - rate limiting
 - usage budgets and quotas
 - practical policy bundles
+- policy validation reports
 - opt-in control diagnostics
 - observability export helpers
 - keyed in-memory limiters
 - throttle and debounce
 - circuit breaker
 - timeout tracking
+- in-process bulkheads, including per-key bulkheads
 - internal time source for deterministic tests
 
 ## Out of scope
@@ -203,6 +205,23 @@ Policy builders do not hide the underlying pieces. They return a `FlowPolicy`
 with a `LimiterRegistry` and optional `BudgetConfig`, `RetryConfig`,
 `CircuitBreakerConfig`, or bulkhead capacity so applications can adopt only the
 parts they need.
+
+Policy validation reports are non-throwing checks for startup, config loading,
+and dry-run tooling. They verify that the primary limiter exists and that
+required optional pieces such as quota, retry, circuit breaker, or bulkhead
+configuration are present before the application starts serving work.
+
+### Bulkhead
+
+日本語では「同時実行の区画制限」です。
+
+処理全体、または tenant / queue / job class などの key ごとに、同時に走れる
+処理数を制限します。失敗した依存先や重いジョブが全体の worker を使い切る
+ことを避けるための部品です。
+
+FlowBrigade の bulkhead は単一プロセス内の permit counter です。キュー管理、
+優先度 scheduling、分散 lock は持ちません。複数 thread で同じ instance を
+共有する場合は、利用側で mutex などの同期を行います。
 
 ### Control diagnostics
 

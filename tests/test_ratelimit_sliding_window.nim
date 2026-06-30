@@ -63,6 +63,37 @@ suite "sliding window rate limiter":
     check limiter.allow(cost = 2)
     check not limiter.allow()
 
+  test "exposes sliding window configuration and current usage":
+    let time = initManualTimeSource()
+    var limiter = initSlidingWindow(
+      limit = 5,
+      per = initDuration(seconds = 10),
+      timeSource = time
+    )
+
+    check limiter.configuredLimit() == 5
+    check limiter.configuredPeriod() == initDuration(seconds = 10)
+    check limiter.currentWindowUse() == 0
+
+    check limiter.allow(cost = 3)
+    check limiter.currentWindowUse() == 3
+
+  test "reset clears sliding window weighted usage":
+    let time = initManualTimeSource()
+    var limiter = initSlidingWindow(
+      limit = 2,
+      per = initDuration(seconds = 1),
+      timeSource = time
+    )
+
+    check limiter.allow(cost = 2)
+    check not limiter.allow()
+    time.advance(initDuration(seconds = 1))
+    check not limiter.allow()
+    limiter.reset()
+    check limiter.currentWindowUse() == 0
+    check limiter.allow(cost = 2)
+
   test "consume returns retry timing when denied":
     let time = initManualTimeSource()
     var limiter = initSlidingWindow(

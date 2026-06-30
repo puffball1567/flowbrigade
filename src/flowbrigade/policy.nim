@@ -1,4 +1,4 @@
-import std/strutils
+import std/[strutils, times]
 
 import ./budget
 import ./bulkhead
@@ -10,6 +10,14 @@ import ./ratelimit
 
 type
   FlowPolicyConfigError* = object of ValueError
+
+  FlowPolicyValidationIssueKind* = enum
+    fpviMissingPrimaryLimiter,
+    fpviMissingLimiter,
+    fpviInvalidQuota,
+    fpviInvalidRetry,
+    fpviInvalidCircuitBreaker,
+    fpviInvalidBulkhead
 
   FlowPolicyKind* = enum
     fpkApiAbuseProtection,
@@ -28,6 +36,27 @@ type
     retry*: RetryConfig
     circuitBreaker*: CircuitBreakerConfig
     bulkheadCapacity*: int
+
+  FlowPolicyValidationIssue* = object
+    kind*: FlowPolicyValidationIssueKind
+    path*: string
+    message*: string
+
+  FlowPolicyValidationReport* = object
+    valid*: bool
+    policyName*: string
+    limiterCount*: int
+    hasQuota*: bool
+    hasRetry*: bool
+    hasCircuitBreaker*: bool
+    hasBulkhead*: bool
+    issues*: seq[FlowPolicyValidationIssue]
+
+  FlowPolicyRequirement* = enum
+    fprQuota,
+    fprRetry,
+    fprCircuitBreaker,
+    fprBulkhead
 
 proc requireName(name: string): string =
   result = name.strip()
@@ -64,6 +93,85 @@ proc initFlowPolicy*(
     circuitBreaker: circuitBreaker,
     bulkheadCapacity: bulkheadCapacity
   )
+
+proc addIssue(
+    report: var FlowPolicyValidationReport;
+    kind: FlowPolicyValidationIssueKind;
+    path, message: string
+) =
+  report.issues.add(FlowPolicyValidationIssue(kind: kind, path: path, message: message))
+  report.valid = false
+
+proc validate*(policy: FlowPolicy): FlowPolicyValidationReport =
+  ## Returns a non-throwing validation report for a composed policy.
+  ##
+  ## This is intended for configuration loading, startup checks, and dry-run
+  ## tooling. It does not consume limiter state.
+  result = FlowPolicyValidationReport(
+    valid: true,
+    policyName: policy.name,
+    limiterCount: policy.registry.limiterNames.len,
+    hasQuota: policy.quota.limit > 0,
+    hasRetry: policy.retry.maxAttempts > 0,
+    hasCircuitBreaker: policy.circuitBreaker.failureThreshold > 0,
+    hasBulkhead: policy.bulkheadCapacity > 0
+  )
+
+  if policy.primaryLimiter.strip().len == 0:
+    result.addIssue(
+      fpviMissingPrimaryLimiter,
+      "primaryLimiter",
+      "primary limiter must not be empty"
+    )
+  elif not policy.registry.hasLimiter(policy.primaryLimiter):
+    result.addIssue(
+      fpviMissingLimiter,
+      "primaryLimiter",
+      "primary limiter is not registered"
+    )
+
+  if policy.quota.limit < 0 or policy.quota.per < initDuration():
+    result.addIssue(fpviInvalidQuota, "quota", "quota values must be positive when configured")
+  if policy.retry.maxAttempts < 0:
+    result.addIssue(fpviInvalidRetry, "retry", "retry max attempts must not be negative")
+  if policy.circuitBreaker.failureThreshold < 0 or policy.circuitBreaker.resetAfter < initDuration():
+    result.addIssue(
+      fpviInvalidCircuitBreaker,
+      "circuitBreaker",
+      "circuit breaker values must be positive when configured"
+    )
+  if policy.bulkheadCapacity < 0:
+    result.addIssue(fpviInvalidBulkhead, "bulkheadCapacity", "bulkhead capacity must not be negative")
+
+proc requireValid*(policy: FlowPolicy): FlowPolicyValidationReport =
+  ## Validates a policy and raises `FlowPolicyConfigError` when it is not usable.
+  result = policy.validate()
+  if not result.valid:
+    raise newException(FlowPolicyConfigError, result.issues[0].message)
+
+proc require*(policy: FlowPolicy; requirements: openArray[FlowPolicyRequirement]): FlowPolicyValidationReport =
+  ## Validates that optional policy parts needed by an application are present.
+  result = policy.validate()
+  for requirement in requirements:
+    case requirement
+    of fprQuota:
+      if not result.hasQuota:
+        result.addIssue(fpviInvalidQuota, "quota", "policy does not include a quota")
+    of fprRetry:
+      if not result.hasRetry:
+        result.addIssue(fpviInvalidRetry, "retry", "policy does not include retry config")
+    of fprCircuitBreaker:
+      if not result.hasCircuitBreaker:
+        result.addIssue(
+          fpviInvalidCircuitBreaker,
+          "circuitBreaker",
+          "policy does not include a circuit breaker"
+        )
+    of fprBulkhead:
+      if not result.hasBulkhead:
+        result.addIssue(fpviInvalidBulkhead, "bulkheadCapacity", "policy does not include a bulkhead")
+  if not result.valid:
+    raise newException(FlowPolicyConfigError, result.issues[0].message)
 
 proc apiAbuseProtectionPolicy*(
     name = "api_abuse";
