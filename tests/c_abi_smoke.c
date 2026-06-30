@@ -9,8 +9,10 @@ int main(void) {
   fb_backoff_policy backoff = 0;
   fb_bulkhead bulkhead = 0;
   fb_timeout timeout = 0;
+  fb_budget_ledger budget = 0;
   fb_rate_limit_result decision;
   fb_bulkhead_result bulkhead_decision;
+  fb_budget_result budget_decision;
   int64_t delay_ns = 0;
   int32_t expired = 0;
 
@@ -71,6 +73,27 @@ int main(void) {
     return 13;
   }
   fb_timeout_destroy(timeout);
+
+  if (fb_budget_ledger_create(10, 60000000000LL, &budget) != FB_OK) {
+    return 14;
+  }
+  if (fb_budget_consume(budget, "tenant-a", 8, 7, &budget_decision) != FB_OK) {
+    fb_budget_ledger_destroy(budget);
+    return 15;
+  }
+  if (!budget_decision.allowed || budget_decision.remaining != 3) {
+    fb_budget_ledger_destroy(budget);
+    return 16;
+  }
+  if (fb_budget_consume(budget, "tenant-a", 8, 4, &budget_decision) != FB_OK) {
+    fb_budget_ledger_destroy(budget);
+    return 17;
+  }
+  if (budget_decision.allowed || budget_decision.remaining != 3) {
+    fb_budget_ledger_destroy(budget);
+    return 18;
+  }
+  fb_budget_ledger_destroy(budget);
 
   puts("flowbrigade C ABI smoke test passed");
   return 0;

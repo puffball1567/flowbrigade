@@ -535,6 +535,7 @@ The current ABI covers:
 - circuit breaker state transitions
 - bulkhead permit tracking
 - timeout/deadline checks and remaining-time helpers
+- budget ledger quota checks, refunds, and resets
 
 Build the shared library:
 

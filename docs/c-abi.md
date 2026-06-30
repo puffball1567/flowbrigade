@@ -13,6 +13,7 @@ The first ABI surface is intentionally narrow:
 - circuit breaker handles
 - bulkhead handles
 - timeout and deadline handles
+- budget ledger handles
 
 The ABI does not expose Nim strings, sequences, exceptions, refs, callbacks, or
 framework adapters. Callers own output buffers. FlowBrigade owns opaque handles
@@ -106,6 +107,13 @@ Opaque handles are mutable and are not internally synchronized. Do not mutate
 the same handle from multiple threads without application-level locking. Create
 separate handles per thread, or protect shared handles with the host language's
 synchronization primitive.
+
+## Keyed APIs
+
+Keyed functions, such as the budget ledger API, accept string input as
+`const char*` plus byte length. FlowBrigade copies the bytes during the call and
+does not retain the caller's pointer. Keys are normalized by the underlying Nim
+API, including trimming surrounding whitespace and rejecting empty keys.
 
 ## Stability
 

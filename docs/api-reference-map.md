@@ -215,4 +215,4 @@ API docs, tests, and recipes rather than being duplicated here.
 - `src/flowbrigade_c.nim`: experimental C ABI implementation.
 - `include/flowbrigade.h`: C declarations for duration, token bucket, fixed
   window, sliding window, backoff, circuit breaker, bulkhead, timeout, and
-  deadline bindings.
+  deadline bindings, plus keyed budget ledger operations.

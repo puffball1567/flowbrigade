@@ -43,6 +43,16 @@ typedef struct fb_bulkhead_result {
   int32_t remaining;
 } fb_bulkhead_result;
 
+typedef struct fb_budget_result {
+  int32_t allowed;
+  int64_t limit;
+  int64_t used;
+  int64_t remaining;
+  int64_t cost;
+  int64_t retry_after_ns;
+  int64_t reset_after_ns;
+} fb_budget_result;
+
 typedef void* fb_backoff_policy;
 typedef void* fb_token_bucket;
 typedef void* fb_fixed_window;
@@ -51,6 +61,7 @@ typedef void* fb_circuit_breaker;
 typedef void* fb_bulkhead;
 typedef void* fb_timeout;
 typedef void* fb_deadline;
+typedef void* fb_budget_ledger;
 
 void NimMain(void);
 
@@ -105,6 +116,14 @@ void fb_deadline_destroy(fb_deadline handle);
 int32_t fb_deadline_expired(fb_deadline handle, int32_t* out_expired);
 int32_t fb_deadline_remaining(fb_deadline handle, int64_t* out_remaining_ns);
 int32_t fb_deadline_clamp(fb_deadline handle, int64_t requested_ns, int64_t* out_clamped_ns);
+
+int32_t fb_budget_ledger_create(int64_t limit, int64_t per_ns, fb_budget_ledger* out_handle);
+void fb_budget_ledger_destroy(fb_budget_ledger handle);
+int32_t fb_budget_inspect(fb_budget_ledger handle, const char* key, size_t key_len, int64_t cost, fb_budget_result* out_result);
+int32_t fb_budget_consume(fb_budget_ledger handle, const char* key, size_t key_len, int64_t cost, fb_budget_result* out_result);
+int32_t fb_budget_refund(fb_budget_ledger handle, const char* key, size_t key_len, int64_t amount, fb_budget_result* out_result);
+int32_t fb_budget_reset(fb_budget_ledger handle, const char* key, size_t key_len, fb_budget_result* out_result);
+int32_t fb_budget_reset_all(fb_budget_ledger handle);
 
 #ifdef __cplusplus
 }

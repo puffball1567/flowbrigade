@@ -70,6 +70,14 @@ Timeouts track elapsed time from construction. Deadlines track a monotonic end
 point. Portable bindings should expose `expired`, `remaining`, and elapsed or
 clamp helpers without attempting to cancel running work.
 
+## Budget Ledger
+
+Budget ledgers track per-key usage over a fixed period. `inspect` reports the
+decision without mutation, `consume` records allowed usage, `refund` subtracts
+usage without going below zero, and reset helpers clear one key or the whole
+ledger. Portable bindings should copy caller-owned key bytes during the call and
+avoid storing foreign string pointers.
+
 ## ABI Boundary
 
 Portable bindings should avoid language-specific memory ownership crossing the

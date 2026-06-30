@@ -1,6 +1,7 @@
 import std/times
 
 import flowbrigade/backoff
+import flowbrigade/budget
 import flowbrigade/bulkhead
 import flowbrigade/circuit_breaker
 import flowbrigade/durations
@@ -38,6 +39,15 @@ type
     inUse*: int32
     remaining*: int32
 
+  FbBudgetResult* {.bycopy.} = object
+    allowed*: int32
+    limit*: int64
+    used*: int64
+    remaining*: int64
+    cost*: int64
+    retryAfterNs*: int64
+    resetAfterNs*: int64
+
   BackoffPolicyHandle = ref object
     policy: BackoffPolicy
 
@@ -62,6 +72,9 @@ type
   DeadlineHandle = ref object
     deadline: Deadline
 
+  BudgetLedgerHandle = ref object
+    ledger: BudgetLedger
+
 var lastAbiError = ""
 
 proc setLastError(message: string) =
@@ -84,6 +97,11 @@ proc copyInput(input: cstring; inputLen: csize_t): string =
   result = newString(int(inputLen))
   copyMem(addr result[0], input, int(inputLen))
 
+proc copyRequiredInput(input: cstring; inputLen: csize_t; name: string): string =
+  if input.isNil:
+    raise newException(ValueError, name & " must not be nil")
+  copyInput(input, inputLen)
+
 proc writeRateLimitResult(outResult: ptr FbRateLimitResult; decision: RateLimitResult): cint =
   if outResult.isNil:
     return abiInvalid("out_result must not be nil")
@@ -104,6 +122,20 @@ proc writeBulkheadResult(outResult: ptr FbBulkheadResult; decision: BulkheadResu
     capacity: int32(decision.capacity),
     inUse: int32(decision.inUse),
     remaining: int32(decision.remaining)
+  )
+  FB_OK
+
+proc writeBudgetResult(outResult: ptr FbBudgetResult; decision: BudgetResult): cint =
+  if outResult.isNil:
+    return abiInvalid("out_result must not be nil")
+  outResult[] = FbBudgetResult(
+    allowed: (if decision.allowed: 1'i32 else: 0'i32),
+    limit: decision.limit,
+    used: decision.used,
+    remaining: decision.remaining,
+    cost: decision.cost,
+    retryAfterNs: decision.retryAfter.inNanoseconds,
+    resetAfterNs: decision.resetAfter.inNanoseconds
   )
   FB_OK
 
@@ -562,4 +594,86 @@ proc fb_deadline_clamp*(
       return abiInvalid("handle and out_clamped_ns must not be nil")
     let state = cast[DeadlineHandle](handle)
     outClampedNs[] = state.deadline.clamp(durationFromNanos(requestedNs)).inNanoseconds
+    FB_OK
+
+proc fb_budget_ledger_create*(
+    limit: int64;
+    perNs: int64;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = BudgetLedgerHandle(
+      ledger: initBudgetLedger(limit, durationFromNanos(perNs))
+    )
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_budget_ledger_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[BudgetLedgerHandle](handle))
+
+proc fb_budget_inspect*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int64;
+    outResult: ptr FbBudgetResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[BudgetLedgerHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeBudgetResult(outResult, state.ledger.inspect(copiedKey, cost))
+
+proc fb_budget_consume*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int64;
+    outResult: ptr FbBudgetResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[BudgetLedgerHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeBudgetResult(outResult, state.ledger.consume(copiedKey, cost))
+
+proc fb_budget_refund*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    amount: int64;
+    outResult: ptr FbBudgetResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[BudgetLedgerHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeBudgetResult(outResult, state.ledger.refund(copiedKey, amount))
+
+proc fb_budget_reset*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outResult: ptr FbBudgetResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[BudgetLedgerHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeBudgetResult(outResult, state.ledger.reset(copiedKey))
+
+proc fb_budget_reset_all*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[BudgetLedgerHandle](handle)
+    state.ledger.resetAll()
     FB_OK

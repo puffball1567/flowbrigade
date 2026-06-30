@@ -75,5 +75,6 @@ work so the first public release has a clear history.
 - Added an experimental C ABI layer with duration, backoff, token bucket, fixed
   window, sliding window, circuit breaker, bulkhead, timeout, and deadline
   handles for future cross-language bindings.
-- Added C ABI version reporting, diagnostic error text, and a C smoke example.
+- Added C ABI version reporting, diagnostic error text, budget ledger handles,
+  and a C smoke example.
 - Added language-neutral specification notes for portable FlowBrigade ports.

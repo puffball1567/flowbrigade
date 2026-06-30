@@ -207,8 +207,50 @@ suite "C ABI":
     check clampedNs > 0
     fb_deadline_destroy(deadlineHandle)
 
+  test "budget ledger handle tracks keyed usage":
+    var handle: pointer
+    check fb_budget_ledger_create(10, initDuration(minutes = 1).inNanoseconds, addr handle) == FB_OK
+    check not handle.isNil
+
+    var result: FbBudgetResult
+    check fb_budget_inspect(handle, " tenant-a ", 10, 4, addr result) == FB_OK
+    check result.allowed == 1
+    check result.limit == 10
+    check result.used == 4
+    check result.remaining == 6
+
+    check fb_budget_consume(handle, " tenant-a ", 10, 7, addr result) == FB_OK
+    check result.allowed == 1
+    check result.used == 7
+    check result.remaining == 3
+
+    check fb_budget_consume(handle, "tenant-a", 8, 4, addr result) == FB_OK
+    check result.allowed == 0
+    check result.used == 7
+    check result.remaining == 3
+    check result.retryAfterNs > 0
+
+    check fb_budget_refund(handle, "tenant-a", 8, 3, addr result) == FB_OK
+    check result.allowed == 1
+    check result.used == 4
+    check result.remaining == 6
+
+    check fb_budget_reset(handle, "tenant-a", 8, addr result) == FB_OK
+    check result.allowed == 1
+    check result.used == 0
+    check result.remaining == 10
+
+    check fb_budget_consume(handle, "tenant-b", 8, 10, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_budget_reset_all(handle) == FB_OK
+    check fb_budget_inspect(handle, "tenant-b", 8, 1, addr result) == FB_OK
+    check result.remaining == 9
+
+    fb_budget_ledger_destroy(handle)
+
   test "C ABI rejects invalid arguments as error codes":
     var result: FbRateLimitResult
+    var budgetResult: FbBudgetResult
     check fb_token_bucket_consume(nil, 1, addr result) == FB_ERR_INVALID_ARGUMENT
     check ($fb_last_error()).len > 0
     check fb_fixed_window_create(0, initDuration(seconds = 1).inNanoseconds, nil) ==
@@ -218,3 +260,14 @@ suite "C ABI":
     check fb_bulkhead_create(0, nil) == FB_ERR_INVALID_ARGUMENT
     check fb_timeout_create(-1, nil) == FB_ERR_INVALID_ARGUMENT
     check fb_deadline_clamp(nil, 1, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_budget_ledger_create(0, initDuration(minutes = 1).inNanoseconds, nil) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_budget_consume(nil, "tenant", 6, 1, addr budgetResult) == FB_ERR_INVALID_ARGUMENT
+
+    var budgetHandle: pointer
+    check fb_budget_ledger_create(10, initDuration(minutes = 1).inNanoseconds, addr budgetHandle) == FB_OK
+    check fb_budget_consume(budgetHandle, nil, 0, 1, addr budgetResult) == FB_ERR_INVALID_ARGUMENT
+    check fb_budget_consume(budgetHandle, " ", 1, 1, addr budgetResult) == FB_ERR_INVALID_ARGUMENT
+    check fb_budget_consume(budgetHandle, "tenant", 6, 0, addr budgetResult) == FB_ERR_INVALID_ARGUMENT
+    check fb_budget_consume(budgetHandle, "tenant", 6, 1, nil) == FB_ERR_INVALID_ARGUMENT
+    fb_budget_ledger_destroy(budgetHandle)
