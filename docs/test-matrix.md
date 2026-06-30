@@ -556,9 +556,12 @@ make gaps visible before adding new features.
 | --- | --- |
 | duration parse | returns nanoseconds and error codes |
 | duration format | writes caller-owned buffers and reports required length |
+| backoff handles | fixed, linear, and exponential delay calculation |
 | token bucket handle | create, consume, denial metadata, destroy |
 | fixed window handle | create, inspect, consume, denial, destroy |
+| sliding window handle | create, consume, denial, destroy |
 | circuit breaker handle | create, allow, record failure, state, destroy |
+| bulkhead handle | create, inspect, acquire, release, destroy |
 | invalid arguments | converted to `FB_ERR_INVALID_ARGUMENT` |
 | C link smoke test | builds and runs against `include/flowbrigade.h` |
 

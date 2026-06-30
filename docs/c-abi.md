@@ -6,9 +6,12 @@ languages. The Nim package remains the reference implementation.
 The first ABI surface is intentionally narrow:
 
 - duration parsing and formatting
+- fixed, linear, and exponential backoff delay calculation
 - token bucket handles
 - fixed window handles
+- sliding window handles
 - circuit breaker handles
+- bulkhead handles
 
 The ABI does not expose Nim strings, sequences, exceptions, refs, callbacks, or
 framework adapters. Callers own output buffers. FlowBrigade owns opaque handles

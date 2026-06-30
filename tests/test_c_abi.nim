@@ -37,6 +37,37 @@ suite "C ABI":
 
     fb_token_bucket_destroy(handle)
 
+  test "backoff handles calculate delays":
+    var handle: pointer
+    var delayNs: int64
+
+    check fb_fixed_backoff_create(initDuration(milliseconds = 250).inNanoseconds, FB_NO_JITTER, addr handle) == FB_OK
+    check fb_backoff_delay_for(handle, 3, addr delayNs) == FB_OK
+    check delayNs == initDuration(milliseconds = 250).inNanoseconds
+    fb_backoff_destroy(handle)
+
+    check fb_linear_backoff_create(
+      initDuration(milliseconds = 100).inNanoseconds,
+      initDuration(milliseconds = 50).inNanoseconds,
+      initDuration(milliseconds = 250).inNanoseconds,
+      FB_NO_JITTER,
+      addr handle
+    ) == FB_OK
+    check fb_backoff_delay_for(handle, 3, addr delayNs) == FB_OK
+    check delayNs == initDuration(milliseconds = 200).inNanoseconds
+    fb_backoff_destroy(handle)
+
+    check fb_exp_backoff_create(
+      initDuration(milliseconds = 100).inNanoseconds,
+      2.0,
+      initDuration(seconds = 1).inNanoseconds,
+      FB_NO_JITTER,
+      addr handle
+    ) == FB_OK
+    check fb_backoff_delay_for(handle, 4, addr delayNs) == FB_OK
+    check delayNs == initDuration(milliseconds = 800).inNanoseconds
+    fb_backoff_destroy(handle)
+
   test "fixed window handle can inspect and consume":
     var handle: pointer
     check fb_fixed_window_create(2, initDuration(seconds = 60).inNanoseconds, addr handle) == FB_OK
@@ -57,6 +88,27 @@ suite "C ABI":
     check result.allowed == 0
 
     fb_fixed_window_destroy(handle)
+
+  test "sliding window handle can inspect and consume":
+    var handle: pointer
+    check fb_sliding_window_create(2, initDuration(seconds = 60).inNanoseconds, addr handle) == FB_OK
+    check not handle.isNil
+
+    var result: FbRateLimitResult
+    check fb_sliding_window_inspect(handle, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check result.remaining == 1
+
+    check fb_sliding_window_consume(handle, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check result.remaining == 1
+    check fb_sliding_window_consume(handle, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check result.remaining == 0
+    check fb_sliding_window_consume(handle, 1, addr result) == FB_OK
+    check result.allowed == 0
+
+    fb_sliding_window_destroy(handle)
 
   test "circuit breaker handle exposes state transitions":
     var handle: pointer
@@ -79,9 +131,42 @@ suite "C ABI":
 
     fb_circuit_breaker_destroy(handle)
 
+  test "bulkhead handle tracks permits":
+    var handle: pointer
+    check fb_bulkhead_create(2, addr handle) == FB_OK
+    check not handle.isNil
+
+    var result: FbBulkheadResult
+    check fb_bulkhead_inspect(handle, addr result) == FB_OK
+    check result.allowed == 1
+    check result.capacity == 2
+    check result.inUse == 0
+    check result.remaining == 2
+
+    check fb_bulkhead_acquire(handle, addr result) == FB_OK
+    check result.allowed == 1
+    check result.inUse == 1
+    check result.remaining == 1
+    check fb_bulkhead_acquire(handle, addr result) == FB_OK
+    check result.allowed == 1
+    check result.inUse == 2
+    check result.remaining == 0
+    check fb_bulkhead_acquire(handle, addr result) == FB_OK
+    check result.allowed == 0
+    check result.inUse == 2
+
+    check fb_bulkhead_release(handle) == FB_OK
+    check fb_bulkhead_inspect(handle, addr result) == FB_OK
+    check result.inUse == 1
+    check result.remaining == 1
+
+    fb_bulkhead_destroy(handle)
+
   test "C ABI rejects invalid arguments as error codes":
     var result: FbRateLimitResult
     check fb_token_bucket_consume(nil, 1, addr result) == FB_ERR_INVALID_ARGUMENT
     check fb_fixed_window_create(0, initDuration(seconds = 1).inNanoseconds, nil) ==
       FB_ERR_INVALID_ARGUMENT
     check fb_duration_parse(nil, 0, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_backoff_delay_for(nil, 1, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_bulkhead_create(0, nil) == FB_ERR_INVALID_ARGUMENT

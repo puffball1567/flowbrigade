@@ -36,16 +36,33 @@ decision is allowed.
 Token bucket limiters allow bursts up to `burst` and refill at `rate` tokens per
 `per` duration. Costs must be positive and must not exceed burst capacity.
 
+## Backoff
+
+Backoff policies calculate a delay for a one-based attempt number. Supported
+policy shapes are fixed, linear, and exponential. Portable bindings should keep
+the attempt number explicit and return an error for attempts lower than one.
+
 ## Fixed Window
 
 Fixed window limiters count usage during a window of length `per`. Costs must be
 positive and must not exceed the configured window limit.
+
+## Sliding Window
+
+Sliding window limiters smooth fixed-window boundary spikes by weighting the
+previous window during the current window. `inspect` must not consume capacity.
 
 ## Circuit Breaker
 
 Circuit breakers start closed. Consecutive failures open the circuit once the
 failure threshold is reached. After the reset duration elapses, the next allowed
 call moves the circuit to half-open. Success closes it; failure reopens it.
+
+## Bulkhead
+
+Bulkheads track permits for concurrent work. `inspect` reports current permit
+state, `acquire` consumes one permit when capacity remains, and `release`
+returns one permit. Releasing without an acquired permit is an error.
 
 ## ABI Boundary
 
