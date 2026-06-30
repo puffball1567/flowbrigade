@@ -7,12 +7,15 @@ import flowbrigade/circuit_breaker
 import flowbrigade/debounce
 import flowbrigade/durations
 import flowbrigade/locks
+import flowbrigade/metrics
+import flowbrigade/observability
 import flowbrigade/ratelimit
 import flowbrigade/throttle
 import flowbrigade/timeout
 
 const
   FB_ABI_VERSION* = 1.cint
+  FB_ABI_VERSION_STRING* = "1"
 
   FB_OK* = 0.cint
   FB_ERR_INVALID_ARGUMENT* = 1.cint
@@ -85,6 +88,30 @@ type
     userData*: pointer
     breaker*: pointer
 
+  FbFixedWindowStorageOperation* = proc(
+    userData: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    limit: int32;
+    perNs: int64;
+    cost: int32;
+    currentNs: int64;
+    outResult: ptr FbRateLimitResult
+  ): cint {.cdecl.}
+
+  FbFixedWindowStorageClear* = proc(
+    userData: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outCleared: ptr int32
+  ): cint {.cdecl.}
+
+  FbRateLimitStorage* {.bycopy.} = object
+    inspectFixedWindow*: FbFixedWindowStorageOperation
+    consumeFixedWindow*: FbFixedWindowStorageOperation
+    clearFixedWindow*: FbFixedWindowStorageClear
+    userData*: pointer
+
   BackoffPolicyHandle = ref object
     policy: BackoffPolicy
 
@@ -143,6 +170,17 @@ proc abiBufferTooSmall(message: string): cint =
 proc durationFromNanos(nanos: int64): Duration =
   initDuration(nanoseconds = nanos)
 
+proc writeString(text: string; buffer: cstring; bufferLen: csize_t; outLen: ptr csize_t; label: string): cint =
+  if outLen.isNil:
+    return abiInvalid("out_len must not be nil")
+  outLen[] = csize_t(text.len)
+  if buffer.isNil or bufferLen <= csize_t(text.len):
+    return abiBufferTooSmall(label & " output buffer is too small")
+  let outBuffer = cast[ptr UncheckedArray[char]](buffer)
+  copyMem(addr outBuffer[0], cstring(text), text.len)
+  outBuffer[text.len] = '\0'
+  FB_OK
+
 proc copyInput(input: cstring; inputLen: csize_t): string =
   if inputLen == 0:
     return ""
@@ -165,6 +203,27 @@ proc writeRateLimitResult(outResult: ptr FbRateLimitResult; decision: RateLimitR
     resetAfterNs: decision.resetAfter.inNanoseconds
   )
   FB_OK
+
+proc rateLimitResultFromAbi(value: FbRateLimitResult): RateLimitResult =
+  RateLimitResult(
+    allowed: value.allowed != 0,
+    limit: int(value.limit),
+    remaining: int(value.remaining),
+    retryAfter: durationFromNanos(value.retryAfterNs),
+    resetAfter: durationFromNanos(value.resetAfterNs)
+  )
+
+proc budgetResultFromAbi(value: FbBudgetResult; key: string): BudgetResult =
+  BudgetResult(
+    allowed: value.allowed != 0,
+    key: key,
+    limit: value.limit,
+    used: value.used,
+    remaining: value.remaining,
+    cost: value.cost,
+    retryAfter: durationFromNanos(value.retryAfterNs),
+    resetAfter: durationFromNanos(value.resetAfterNs)
+  )
 
 proc writeBulkheadResult(outResult: ptr FbBulkheadResult; decision: BulkheadResult): cint =
   if outResult.isNil:
@@ -237,6 +296,34 @@ template catchAbiErrors(body: untyped): cint =
 proc fb_abi_version*(): cint {.cdecl, exportc, dynlib.} =
   FB_ABI_VERSION
 
+proc fb_abi_version_string*(): cstring {.cdecl, exportc, dynlib.} =
+  cstring(FB_ABI_VERSION_STRING)
+
+proc fb_abi_supports*(
+    feature: cstring;
+    featureLen: csize_t;
+    outSupported: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if feature.isNil or outSupported.isNil:
+      return abiInvalid("feature and out_supported must not be nil")
+    let copiedFeature = copyInput(feature, featureLen)
+    outSupported[] = (if copiedFeature in [
+      "duration",
+      "backoff",
+      "ratelimit",
+      "budget",
+      "locks",
+      "throttle",
+      "debounce",
+      "retry-callback",
+      "fallback-callback",
+      "limiter-registry",
+      "storage-callback",
+      "metrics"
+    ]: 1'i32 else: 0'i32)
+    FB_OK
+
 proc fb_last_error*(): cstring {.cdecl, exportc, dynlib.} =
   cstring(lastAbiError)
 
@@ -258,16 +345,66 @@ proc fb_duration_format*(
     outLen: ptr csize_t
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
-    if outLen.isNil:
-      return abiInvalid("out_len must not be nil")
     let text = formatDuration(durationFromNanos(durationNs))
-    outLen[] = csize_t(text.len)
-    if buffer.isNil or bufferLen <= csize_t(text.len):
-      return abiBufferTooSmall("duration output buffer is too small")
-    let outBuffer = cast[ptr UncheckedArray[char]](buffer)
-    copyMem(addr outBuffer[0], cstring(text), text.len)
-    outBuffer[text.len] = '\0'
-    FB_OK
+    writeString(text, buffer, bufferLen, outLen, "duration")
+
+proc fb_rate_limit_result_to_json*(
+    resultValue: ptr FbRateLimitResult;
+    buffer: cstring;
+    bufferLen: csize_t;
+    outLen: ptr csize_t
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if resultValue.isNil:
+      return abiInvalid("result must not be nil")
+    let text = rateLimitResultFromAbi(resultValue[]).metricEvent().toJsonLine()
+    writeString(text, buffer, bufferLen, outLen, "rate limit metric")
+
+proc fb_rate_limit_result_to_prometheus*(
+    resultValue: ptr FbRateLimitResult;
+    buffer: cstring;
+    bufferLen: csize_t;
+    outLen: ptr csize_t
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if resultValue.isNil:
+      return abiInvalid("result must not be nil")
+    let text = rateLimitResultFromAbi(resultValue[]).metricEvent().toPrometheusLine()
+    writeString(text, buffer, bufferLen, outLen, "rate limit metric")
+
+proc fb_budget_result_to_json*(
+    resultValue: ptr FbBudgetResult;
+    key: cstring;
+    keyLen: csize_t;
+    buffer: cstring;
+    bufferLen: csize_t;
+    outLen: ptr csize_t
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if resultValue.isNil:
+      return abiInvalid("result must not be nil")
+    if key.isNil and keyLen > 0:
+      return abiInvalid("key must not be nil when key_len is positive")
+    let copiedKey = copyInput(key, keyLen)
+    let text = budgetResultFromAbi(resultValue[], copiedKey).metricEvent().toJsonLine()
+    writeString(text, buffer, bufferLen, outLen, "budget metric")
+
+proc fb_budget_result_to_prometheus*(
+    resultValue: ptr FbBudgetResult;
+    key: cstring;
+    keyLen: csize_t;
+    buffer: cstring;
+    bufferLen: csize_t;
+    outLen: ptr csize_t
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if resultValue.isNil:
+      return abiInvalid("result must not be nil")
+    if key.isNil and keyLen > 0:
+      return abiInvalid("key must not be nil when key_len is positive")
+    let copiedKey = copyInput(key, keyLen)
+    let text = budgetResultFromAbi(resultValue[], copiedKey).metricEvent().toPrometheusLine()
+    writeString(text, buffer, bufferLen, outLen, "budget metric")
 
 proc fb_fixed_backoff_create*(
     delayNs: int64;
@@ -1131,6 +1268,100 @@ proc fb_limiter_registry_add_keyed_fixed_window*(
     state.registry.addLimiter(
       copiedName,
       keyedFixedWindowDefinition(int(limit), durationFromNanos(perNs), maxKeys = int(maxKeys))
+    )
+    FB_OK
+
+proc storageFromAbi(storageValue: ptr FbRateLimitStorage): RateLimitStorage =
+  if storageValue.isNil:
+    raise newException(ValueError, "storage must not be nil")
+  let callbacks = storageValue[]
+  if callbacks.inspectFixedWindow.isNil or
+      callbacks.consumeFixedWindow.isNil or
+      callbacks.clearFixedWindow.isNil:
+    raise newException(ValueError, "storage callbacks must not be nil")
+
+  RateLimitStorage(
+    inspectFixedWindow: proc(
+      key: string;
+      limit: int;
+      per: Duration;
+      cost: int;
+      current: Duration
+    ): RateLimitResult =
+      var outResult: FbRateLimitResult
+      let status = callbacks.inspectFixedWindow(
+        callbacks.userData,
+        cstring(key),
+        csize_t(key.len),
+        int32(limit),
+        per.inNanoseconds,
+        int32(cost),
+        current.inNanoseconds,
+        addr outResult
+      )
+      if status != FB_OK:
+        raise newException(ValueError, "storage inspect callback returned an error")
+      rateLimitResultFromAbi(outResult),
+    consumeFixedWindow: proc(
+      key: string;
+      limit: int;
+      per: Duration;
+      cost: int;
+      current: Duration
+    ): RateLimitResult =
+      var outResult: FbRateLimitResult
+      let status = callbacks.consumeFixedWindow(
+        callbacks.userData,
+        cstring(key),
+        csize_t(key.len),
+        int32(limit),
+        per.inNanoseconds,
+        int32(cost),
+        current.inNanoseconds,
+        addr outResult
+      )
+      if status != FB_OK:
+        raise newException(ValueError, "storage consume callback returned an error")
+      rateLimitResultFromAbi(outResult),
+    clearFixedWindow: proc(key: string): bool =
+      var cleared: int32
+      let status = callbacks.clearFixedWindow(
+        callbacks.userData,
+        cstring(key),
+        csize_t(key.len),
+        addr cleared
+      )
+      if status != FB_OK:
+        raise newException(ValueError, "storage clear callback returned an error")
+      cleared != 0
+  )
+
+proc fb_limiter_registry_add_stored_fixed_window*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    prefix: cstring;
+    prefixLen: csize_t;
+    limit: int32;
+    perNs: int64;
+    storage: ptr FbRateLimitStorage;
+    maxKeyLength: int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    let copiedPrefix = copyRequiredInput(prefix, prefixLen, "prefix")
+    let effectiveMaxKeyLength =
+      if maxKeyLength <= 0: DefaultMaxRateLimitKeyLength else: int(maxKeyLength)
+    state.registry.addStoredFixedWindow(
+      name = copiedName,
+      prefix = copiedPrefix,
+      limit = int(limit),
+      per = durationFromNanos(perNs),
+      storage = storageFromAbi(storage),
+      maxKeyLength = effectiveMaxKeyLength
     )
     FB_OK
 

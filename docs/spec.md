@@ -115,8 +115,17 @@ inspection/consumption operations. Compound limiters reference existing child
 names and inspect before consuming children so a denied compound decision does
 not partially consume capacity.
 
+Stored fixed-window registry entries may be backed by callback storage. The
+callback owns atomic storage semantics; the ABI boundary owns string copying,
+input validation, fixed result structs, and error-code conversion.
+
+Metric export ABIs should keep exporters backend-neutral. They convert stable
+decision structs into caller-owned text buffers without retaining pointers or
+starting background work.
+
 ## ABI Boundary
 
 Portable bindings should avoid language-specific memory ownership crossing the
 boundary. The C ABI uses opaque handles, fixed structs, caller-owned buffers,
-integer status codes, ABI version reporting, and diagnostic error text.
+integer status codes, ABI version and feature reporting, and diagnostic error
+text.

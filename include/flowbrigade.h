@@ -86,11 +86,35 @@ typedef struct fb_fallback_result {
 typedef int32_t (*fb_fallback_operation)(void* user_data, int32_t provider_index);
 typedef int32_t (*fb_fallback_predicate)(void* user_data, int32_t status, int32_t provider_index);
 
+typedef int32_t (*fb_fixed_window_storage_operation)(
+  void* user_data,
+  const char* key,
+  size_t key_len,
+  int32_t limit,
+  int64_t per_ns,
+  int32_t cost,
+  int64_t current_ns,
+  fb_rate_limit_result* out_result
+);
+typedef int32_t (*fb_fixed_window_storage_clear)(
+  void* user_data,
+  const char* key,
+  size_t key_len,
+  int32_t* out_cleared
+);
+
 typedef struct fb_fallback_provider {
   fb_fallback_operation operation;
   void* user_data;
   void* breaker;
 } fb_fallback_provider;
+
+typedef struct fb_rate_limit_storage {
+  fb_fixed_window_storage_operation inspect_fixed_window;
+  fb_fixed_window_storage_operation consume_fixed_window;
+  fb_fixed_window_storage_clear clear_fixed_window;
+  void* user_data;
+} fb_rate_limit_storage;
 
 typedef void* fb_backoff_policy;
 typedef void* fb_token_bucket;
@@ -110,10 +134,16 @@ typedef void* fb_limiter_registry;
 void NimMain(void);
 
 int32_t fb_abi_version(void);
+const char* fb_abi_version_string(void);
+int32_t fb_abi_supports(const char* feature, size_t feature_len, int32_t* out_supported);
 const char* fb_last_error(void);
 
 int32_t fb_duration_parse(const char* input, size_t input_len, int64_t* out_ns);
 int32_t fb_duration_format(int64_t duration_ns, char* buffer, size_t buffer_len, size_t* out_len);
+int32_t fb_rate_limit_result_to_json(const fb_rate_limit_result* result, char* buffer, size_t buffer_len, size_t* out_len);
+int32_t fb_rate_limit_result_to_prometheus(const fb_rate_limit_result* result, char* buffer, size_t buffer_len, size_t* out_len);
+int32_t fb_budget_result_to_json(const fb_budget_result* result, const char* key, size_t key_len, char* buffer, size_t buffer_len, size_t* out_len);
+int32_t fb_budget_result_to_prometheus(const fb_budget_result* result, const char* key, size_t key_len, char* buffer, size_t buffer_len, size_t* out_len);
 
 int32_t fb_fixed_backoff_create(int64_t delay_ns, int32_t jitter, fb_backoff_policy* out_handle);
 int32_t fb_linear_backoff_create(int64_t initial_ns, int64_t increment_ns, int64_t max_delay_ns, int32_t jitter, fb_backoff_policy* out_handle);
@@ -199,6 +229,7 @@ int32_t fb_limiter_registry_add_fixed_window(fb_limiter_registry handle, const c
 int32_t fb_limiter_registry_add_sliding_window(fb_limiter_registry handle, const char* name, size_t name_len, int32_t limit, int64_t per_ns);
 int32_t fb_limiter_registry_add_token_bucket(fb_limiter_registry handle, const char* name, size_t name_len, int32_t rate, int64_t per_ns, int32_t burst);
 int32_t fb_limiter_registry_add_keyed_fixed_window(fb_limiter_registry handle, const char* name, size_t name_len, int32_t limit, int64_t per_ns, int32_t max_keys);
+int32_t fb_limiter_registry_add_stored_fixed_window(fb_limiter_registry handle, const char* name, size_t name_len, const char* prefix, size_t prefix_len, int32_t limit, int64_t per_ns, const fb_rate_limit_storage* storage, int32_t max_key_length);
 int32_t fb_limiter_registry_add_compound(fb_limiter_registry handle, const char* name, size_t name_len, const char* const* child_names, const size_t* child_name_lens, size_t child_count);
 int32_t fb_limiter_registry_inspect(fb_limiter_registry handle, const char* name, size_t name_len, const char* key, size_t key_len, int32_t cost, fb_rate_limit_result* out_result);
 int32_t fb_limiter_registry_consume(fb_limiter_registry handle, const char* name, size_t name_len, const char* key, size_t key_len, int32_t cost, fb_rate_limit_result* out_result);

@@ -19,11 +19,15 @@ The first ABI surface is intentionally narrow:
 - retry execution with C callbacks
 - fallback execution with ordered C provider callbacks
 - named limiter registry handles
+- C callback storage for registry-backed stored fixed windows
+- result export helpers for JSON lines and Prometheus-style text
+- ABI version string and feature checks
 
-The ABI does not expose Nim strings, sequences, exceptions, refs, callbacks, or
-framework adapters. Callers own output buffers. FlowBrigade owns opaque handles
-created through the C API, and callers must release those handles with the
-matching destroy function.
+The ABI does not expose Nim strings, sequences, exceptions, refs, or framework
+adapters. Callers own output buffers. FlowBrigade owns opaque handles created
+through the C API, and callers must release those handles with the matching
+destroy function. Callback bundles copy string inputs for the duration of each
+call and report callback failures as ABI errors.
 
 ## Build
 
@@ -103,8 +107,9 @@ codes. No exception should cross into C.
 current implementation stores this text process-wide, so callers should not
 treat it as thread-local state.
 
-`fb_abi_version()` returns the integer ABI version. Bindings should check this
-before assuming newer functions exist.
+`fb_abi_version()` and `fb_abi_version_string()` return the ABI version.
+Bindings can call `fb_abi_supports(feature, len, &out)` before assuming newer
+groups such as `storage-callback` or `metrics` exist.
 
 ## Thread Safety
 
@@ -134,9 +139,17 @@ provider succeeded; any other status means the provider failed and the next
 provider may be tried. Exhausting providers is reported in `fb_fallback_result`
 rather than as an ABI transport error.
 
-Limiter registries expose named in-memory limiter definitions and compound
-limiters. Storage-backed registry entries are intentionally left to storage
-adapter APIs instead of being hidden behind this first registry ABI.
+Limiter registries expose named in-memory limiter definitions, compound
+limiters, and stored fixed-window entries backed by C callback storage. The
+storage callback is responsible for any cross-process atomicity. FlowBrigade
+validates names, prefixes, keys, costs, and result conversion around that
+callback. The callback function pointers are copied when the limiter is
+registered, but the `user_data` pointer remains owned by the caller and must
+stay valid as long as the registry can call the stored limiter.
+
+Result export helpers convert `fb_rate_limit_result` and `fb_budget_result`
+into JSON-line or Prometheus-style text using caller-owned buffers. These
+helpers do not choose a logging or metrics backend.
 
 ## Stability
 

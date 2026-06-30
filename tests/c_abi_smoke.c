@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "flowbrigade.h"
 
@@ -12,6 +13,10 @@ typedef struct retry_state {
 typedef struct fallback_state {
   int32_t calls[2];
 } fallback_state;
+
+typedef struct storage_state {
+  int32_t used;
+} storage_state;
 
 static int32_t retry_operation(void* user_data, int32_t attempt) {
   retry_state* state = (retry_state*)user_data;
@@ -33,6 +38,65 @@ static int32_t fallback_operation(void* user_data, int32_t provider_index) {
   return provider_index == 1 ? FB_OK : 55;
 }
 
+static int32_t storage_inspect(
+  void* user_data,
+  const char* key,
+  size_t key_len,
+  int32_t limit,
+  int64_t per_ns,
+  int32_t cost,
+  int64_t current_ns,
+  fb_rate_limit_result* out_result
+) {
+  storage_state* state = (storage_state*)user_data;
+  int32_t allowed = state->used + cost <= limit;
+  (void)key;
+  (void)key_len;
+  (void)current_ns;
+  if (!out_result) {
+    return FB_ERR_INVALID_ARGUMENT;
+  }
+  out_result->allowed = allowed;
+  out_result->limit = limit;
+  out_result->remaining = allowed ? limit - state->used - cost : limit - state->used;
+  out_result->retry_after_ns = allowed ? 0 : per_ns;
+  out_result->reset_after_ns = per_ns;
+  return FB_OK;
+}
+
+static int32_t storage_consume(
+  void* user_data,
+  const char* key,
+  size_t key_len,
+  int32_t limit,
+  int64_t per_ns,
+  int32_t cost,
+  int64_t current_ns,
+  fb_rate_limit_result* out_result
+) {
+  storage_state* state = (storage_state*)user_data;
+  int32_t status = storage_inspect(user_data, key, key_len, limit, per_ns, cost, current_ns, out_result);
+  if (status != FB_OK) {
+    return status;
+  }
+  if (out_result->allowed) {
+    state->used += cost;
+  }
+  return FB_OK;
+}
+
+static int32_t storage_clear(void* user_data, const char* key, size_t key_len, int32_t* out_cleared) {
+  storage_state* state = (storage_state*)user_data;
+  (void)key;
+  (void)key_len;
+  if (!out_cleared) {
+    return FB_ERR_INVALID_ARGUMENT;
+  }
+  *out_cleared = state->used > 0;
+  state->used = 0;
+  return FB_OK;
+}
+
 int main(void) {
   int64_t nanos = 0;
   fb_token_bucket bucket = 0;
@@ -46,11 +110,13 @@ int main(void) {
   fb_throttle throttle = 0;
   fb_debouncer debouncer = 0;
   fb_limiter_registry registry = 0;
+  fb_rate_limit_storage storage;
   fb_retry_result retry_decision;
   retry_state retry = {0, 0, 0};
   fb_fallback_provider fallback_providers[2];
   fb_fallback_result fallback_decision;
   fallback_state fallback = {{0, 0}};
+  storage_state stored = {0};
   fb_rate_limit_result decision;
   fb_bulkhead_result bulkhead_decision;
   fb_budget_result budget_decision;
@@ -60,11 +126,19 @@ int main(void) {
   int32_t expired = 0;
   int32_t released = 0;
   int32_t flag = 0;
+  char text[256];
+  size_t text_len = 0;
 
   NimMain();
 
   if (fb_abi_version() < 1) {
     return 11;
+  }
+  if (strcmp(fb_abi_version_string(), "1") != 0) {
+    return 45;
+  }
+  if (fb_abi_supports("storage-callback", 16, &flag) != FB_OK || !flag) {
+    return 46;
   }
 
   if (fb_duration_parse("1s500ms", 7, &nanos) != FB_OK) {
@@ -261,6 +335,35 @@ int main(void) {
   if (fb_limiter_registry_consume(registry, "global", 6, "global", 6, 1, &decision) != FB_OK || decision.allowed) {
     fb_limiter_registry_destroy(registry);
     return 44;
+  }
+
+  storage.inspect_fixed_window = storage_inspect;
+  storage.consume_fixed_window = storage_consume;
+  storage.clear_fixed_window = storage_clear;
+  storage.user_data = &stored;
+  if (fb_limiter_registry_add_stored_fixed_window(registry, "stored", 6, "login", 5, 2, 60000000000LL, &storage, 64) != FB_OK) {
+    fb_limiter_registry_destroy(registry);
+    return 47;
+  }
+  if (fb_limiter_registry_consume(registry, "stored", 6, "user:1", 6, 1, &decision) != FB_OK || !decision.allowed) {
+    fb_limiter_registry_destroy(registry);
+    return 48;
+  }
+  if (fb_limiter_registry_consume(registry, "stored", 6, "user:1", 6, 1, &decision) != FB_OK || !decision.allowed) {
+    fb_limiter_registry_destroy(registry);
+    return 49;
+  }
+  if (fb_limiter_registry_consume(registry, "stored", 6, "user:1", 6, 1, &decision) != FB_OK || decision.allowed) {
+    fb_limiter_registry_destroy(registry);
+    return 50;
+  }
+  if (fb_rate_limit_result_to_prometheus(&decision, text, sizeof(text), &text_len) != FB_OK) {
+    fb_limiter_registry_destroy(registry);
+    return 51;
+  }
+  if (strstr(text, "flowbrigade_ratelimit_decision") == 0) {
+    fb_limiter_registry_destroy(registry);
+    return 52;
   }
   fb_limiter_registry_destroy(registry);
 

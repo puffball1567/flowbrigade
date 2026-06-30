@@ -75,8 +75,9 @@ work so the first public release has a clear history.
 - Added an experimental C ABI layer with duration, backoff, token bucket, fixed
   window, sliding window, circuit breaker, bulkhead, timeout, and deadline
   handles for future cross-language bindings.
-- Added C ABI version reporting, diagnostic error text, budget ledger handles,
-  in-memory lock handles, throttle/debounce handles, retry callbacks, and a C
-  fallback callback runner, named limiter registry handles, and a C smoke
-  example.
+- Added C ABI version reporting, feature checks, diagnostic error text, budget
+  ledger handles, in-memory lock handles, throttle/debounce handles, retry
+  callbacks, fallback callback runner, named limiter registry handles,
+  callback-backed stored fixed windows, result metric export helpers, and a C
+  smoke example.
 - Added language-neutral specification notes for portable FlowBrigade ports.

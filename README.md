@@ -540,7 +540,10 @@ The current ABI covers:
 - throttle and debounce state handles
 - retry execution with C operation and sleep callbacks
 - fallback execution with ordered C provider callbacks
-- named limiter registry operations
+- named limiter registry operations, including C callback storage-backed fixed
+  windows
+- rate-limit and budget result export to JSON lines or Prometheus-style text
+- ABI feature checks for bindings
 
 Build the shared library:
 

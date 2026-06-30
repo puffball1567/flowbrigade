@@ -1,4 +1,4 @@
-import std/[times, unittest]
+import std/[strutils, times, unittest]
 
 import flowbrigade_c
 
@@ -14,6 +14,12 @@ type FallbackState = object
   statuses: array[4, int32]
   predicateCalls: int32
   stopStatus: int32
+
+type StorageState = object
+  used: int32
+  failStatus: int32
+  clearCalls: int32
+  lastKey: string
 
 proc retryOperation(userData: pointer; attempt: int32): cint {.cdecl.} =
   let state = cast[ptr RetryState](userData)
@@ -49,10 +55,81 @@ proc fallbackPredicate(userData: pointer; status: int32; providerIndex: int32): 
     return 0.cint
   1.cint
 
+proc storageInspect(
+    userData: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    limit: int32;
+    perNs: int64;
+    cost: int32;
+    currentNs: int64;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl.} =
+  let state = cast[ptr StorageState](userData)
+  if state.failStatus != 0:
+    return state.failStatus.cint
+  if outResult.isNil:
+    return FB_ERR_INVALID_ARGUMENT
+  discard perNs
+  discard currentNs
+  state.lastKey = newString(int(keyLen))
+  if keyLen > 0:
+    copyMem(addr state.lastKey[0], key, int(keyLen))
+  let remaining = limit - state.used
+  outResult[] = FbRateLimitResult(
+    allowed: (if state.used + cost <= limit: 1'i32 else: 0'i32),
+    limit: limit,
+    remaining: max(0'i32, remaining - (if state.used + cost <= limit: cost else: 0'i32)),
+    retryAfterNs: (if state.used + cost <= limit: 0'i64 else: perNs),
+    resetAfterNs: perNs
+  )
+  FB_OK
+
+proc storageConsume(
+    userData: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    limit: int32;
+    perNs: int64;
+    cost: int32;
+    currentNs: int64;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl.} =
+  let state = cast[ptr StorageState](userData)
+  let status = storageInspect(userData, key, keyLen, limit, perNs, cost, currentNs, outResult)
+  if status != FB_OK:
+    return status
+  if outResult[].allowed != 0:
+    state.used += cost
+  FB_OK
+
+proc storageClear(userData: pointer; key: cstring; keyLen: csize_t; outCleared: ptr int32): cint {.cdecl.} =
+  let state = cast[ptr StorageState](userData)
+  if state.failStatus != 0:
+    return state.failStatus.cint
+  if outCleared.isNil:
+    return FB_ERR_INVALID_ARGUMENT
+  state.lastKey = newString(int(keyLen))
+  if keyLen > 0:
+    copyMem(addr state.lastKey[0], key, int(keyLen))
+  inc state.clearCalls
+  outCleared[] = (if state.used > 0: 1'i32 else: 0'i32)
+  state.used = 0
+  FB_OK
+
 suite "C ABI":
   test "reports ABI version and last error":
     check fb_abi_version() == 1
+    check $fb_abi_version_string() == "1"
     check fb_last_error() != nil
+
+    var supported: int32
+    check fb_abi_supports("storage-callback", 16, addr supported) == FB_OK
+    check supported == 1
+    check fb_abi_supports("unknown", 7, addr supported) == FB_OK
+    check supported == 0
+    check fb_abi_supports(nil, 0, addr supported) == FB_ERR_INVALID_ARGUMENT
+    check fb_abi_supports("metrics", 7, nil) == FB_ERR_INVALID_ARGUMENT
 
     var nanos: int64
     check fb_duration_parse("bad", 3, addr nanos) == FB_ERR_INVALID_ARGUMENT
@@ -73,6 +150,48 @@ suite "C ABI":
     check fb_duration_format(nanos, cstring(tiny), csize_t(tiny.len), addr needed) ==
       FB_ERR_BUFFER_TOO_SMALL
     check needed == 7.csize_t
+
+  test "converts result structs to observability text":
+    var rateDecision = FbRateLimitResult(
+      allowed: 0,
+      limit: 10,
+      remaining: 2,
+      retryAfterNs: initDuration(seconds = 30).inNanoseconds,
+      resetAfterNs: initDuration(minutes = 1).inNanoseconds
+    )
+    var needed: csize_t
+    var buffer = newString(256)
+    check fb_rate_limit_result_to_json(addr rateDecision, cstring(buffer), csize_t(buffer.len), addr needed) == FB_OK
+    let jsonLine = $cstring(buffer)
+    check "\"name\":\"flowbrigade.ratelimit.decision\"" in jsonLine
+    check "\"allowed\":\"false\"" in jsonLine
+
+    check fb_rate_limit_result_to_prometheus(addr rateDecision, cstring(buffer), csize_t(buffer.len), addr needed) == FB_OK
+    let prometheus = $cstring(buffer)
+    check prometheus.startsWith("flowbrigade_ratelimit_decision")
+    check "allowed=\"false\"" in prometheus
+
+    var budgetDecision = FbBudgetResult(
+      allowed: 1,
+      limit: 100,
+      used: 25,
+      remaining: 75,
+      cost: 25,
+      retryAfterNs: 0,
+      resetAfterNs: initDuration(minutes = 1).inNanoseconds
+    )
+    check fb_budget_result_to_json(addr budgetDecision, "tenant-a", 8, cstring(buffer), csize_t(buffer.len), addr needed) == FB_OK
+    check "\"name\":\"flowbrigade.budget.decision\"" in $cstring(buffer)
+    check "\"key\":\"tenant-a\"" in $cstring(buffer)
+
+    var tiny = newString(4)
+    check fb_budget_result_to_prometheus(addr budgetDecision, "tenant-a", 8, cstring(tiny), csize_t(tiny.len), addr needed) ==
+      FB_ERR_BUFFER_TOO_SMALL
+    check needed > 4.csize_t
+    check fb_rate_limit_result_to_json(nil, cstring(buffer), csize_t(buffer.len), addr needed) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_budget_result_to_json(addr budgetDecision, nil, 1, cstring(buffer), csize_t(buffer.len), addr needed) ==
+      FB_ERR_INVALID_ARGUMENT
 
   test "token bucket handle can inspect and consume":
     var handle: pointer
@@ -647,6 +766,108 @@ suite "C ABI":
 
     fb_limiter_registry_destroy(registry)
 
+  test "limiter registry C ABI supports stored fixed window callbacks":
+    var registry: pointer
+    var state = StorageState()
+    let storage = FbRateLimitStorage(
+      inspectFixedWindow: storageInspect,
+      consumeFixedWindow: storageConsume,
+      clearFixedWindow: storageClear,
+      userData: addr state
+    )
+    check fb_limiter_registry_create(addr registry) == FB_OK
+    check fb_limiter_registry_add_stored_fixed_window(
+      registry,
+      "stored",
+      6,
+      "login",
+      5,
+      2,
+      initDuration(minutes = 1).inNanoseconds,
+      addr storage,
+      64
+    ) == FB_OK
+
+    var result: FbRateLimitResult
+    check fb_limiter_registry_inspect(registry, "stored", 6, "user:1", 6, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check state.used == 0
+    check state.lastKey == "login:user:1"
+
+    check fb_limiter_registry_consume(registry, "stored", 6, "user:1", 6, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check state.used == 1
+    check fb_limiter_registry_consume(registry, "stored", 6, "user:1", 6, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check state.used == 2
+    check fb_limiter_registry_consume(registry, "stored", 6, "user:1", 6, 1, addr result) == FB_OK
+    check result.allowed == 0
+
+    var cleared: int32
+    check fb_limiter_registry_clear(registry, "stored", 6, "user:1", 6, addr cleared) == FB_OK
+    check cleared == 1
+    check state.clearCalls == 1
+    check state.used == 0
+
+    fb_limiter_registry_destroy(registry)
+
+  test "limiter registry C ABI reports stored fixed window callback errors":
+    var registry: pointer
+    var state = StorageState(failStatus: 77)
+    let storage = FbRateLimitStorage(
+      inspectFixedWindow: storageInspect,
+      consumeFixedWindow: storageConsume,
+      clearFixedWindow: storageClear,
+      userData: addr state
+    )
+    check fb_limiter_registry_create(addr registry) == FB_OK
+    check fb_limiter_registry_add_stored_fixed_window(
+      registry,
+      "stored",
+      6,
+      "login",
+      5,
+      2,
+      initDuration(minutes = 1).inNanoseconds,
+      addr storage,
+      64
+    ) == FB_OK
+
+    var result: FbRateLimitResult
+    check fb_limiter_registry_consume(registry, "stored", 6, "user:1", 6, 1, addr result) ==
+      FB_ERR_INVALID_ARGUMENT
+
+    var invalidStorage = FbRateLimitStorage(
+      inspectFixedWindow: nil,
+      consumeFixedWindow: storageConsume,
+      clearFixedWindow: storageClear,
+      userData: addr state
+    )
+    check fb_limiter_registry_add_stored_fixed_window(
+      registry,
+      "broken",
+      6,
+      "broken",
+      6,
+      2,
+      initDuration(minutes = 1).inNanoseconds,
+      addr invalidStorage,
+      64
+    ) == FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_add_stored_fixed_window(
+      registry,
+      "missing",
+      7,
+      "missing",
+      7,
+      2,
+      initDuration(minutes = 1).inNanoseconds,
+      nil,
+      64
+    ) == FB_ERR_INVALID_ARGUMENT
+
+    fb_limiter_registry_destroy(registry)
+
   test "limiter registry C ABI rejects invalid use":
     var result: FbRateLimitResult
     var allowed: int32
@@ -663,6 +884,19 @@ suite "C ABI":
     check fb_limiter_registry_add_fixed_window(registry, "global", 6, 0, initDuration(minutes = 1).inNanoseconds) ==
       FB_ERR_INVALID_ARGUMENT
     check fb_limiter_registry_add_fixed_window(registry, "global", 6, 1, initDuration(minutes = 1).inNanoseconds) == FB_OK
+    var storageState = StorageState()
+    let storage = FbRateLimitStorage(
+      inspectFixedWindow: storageInspect,
+      consumeFixedWindow: storageConsume,
+      clearFixedWindow: storageClear,
+      userData: addr storageState
+    )
+    check fb_limiter_registry_add_stored_fixed_window(nil, "stored", 6, "p", 1, 1, initDuration(minutes = 1).inNanoseconds, addr storage, 64) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_add_stored_fixed_window(registry, nil, 0, "p", 1, 1, initDuration(minutes = 1).inNanoseconds, addr storage, 64) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_add_stored_fixed_window(registry, "stored", 6, nil, 0, 1, initDuration(minutes = 1).inNanoseconds, addr storage, 64) ==
+      FB_ERR_INVALID_ARGUMENT
     check fb_limiter_registry_add_fixed_window(registry, "global", 6, 1, initDuration(minutes = 1).inNanoseconds) ==
       FB_ERR_INVALID_ARGUMENT
     check fb_limiter_registry_consume(registry, "missing", 7, "global", 6, 1, addr result) ==
