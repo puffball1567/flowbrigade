@@ -77,5 +77,6 @@ work so the first public release has a clear history.
   handles for future cross-language bindings.
 - Added C ABI version reporting, diagnostic error text, budget ledger handles,
   in-memory lock handles, throttle/debounce handles, retry callbacks, and a C
-  fallback callback runner, and a C smoke example.
+  fallback callback runner, named limiter registry handles, and a C smoke
+  example.
 - Added language-neutral specification notes for portable FlowBrigade ports.

@@ -108,6 +108,13 @@ not ABI transport failures. Optional predicates can stop fallback after a
 provider failure. Optional circuit breaker handles can skip open providers and
 record provider failure or success.
 
+## Limiter Registry ABI
+
+Limiter registry ABIs should expose named limiter definitions and named
+inspection/consumption operations. Compound limiters reference existing child
+names and inspect before consuming children so a denied compound decision does
+not partially consume capacity.
+
 ## ABI Boundary
 
 Portable bindings should avoid language-specific memory ownership crossing the

@@ -568,3 +568,117 @@ suite "C ABI":
       FB_ERR_INVALID_ARGUMENT
     check fb_fallback_run(cast[ptr UncheckedArray[FbFallbackProvider]](addr invalidProviders[0]), 1, nil, nil) ==
       FB_ERR_INVALID_ARGUMENT
+
+  test "limiter registry C ABI registers and uses named limiters":
+    var registry: pointer
+    check fb_limiter_registry_create(addr registry) == FB_OK
+    check not registry.isNil
+
+    var result: FbRateLimitResult
+    check fb_limiter_registry_add_fixed_window(
+      registry,
+      "global",
+      6,
+      1,
+      initDuration(minutes = 1).inNanoseconds
+    ) == FB_OK
+    check fb_limiter_registry_consume(registry, "global", 6, "global", 6, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_limiter_registry_consume(registry, "global", 6, "global", 6, 1, addr result) == FB_OK
+    check result.allowed == 0
+
+    check fb_limiter_registry_add_keyed_fixed_window(
+      registry,
+      "login",
+      5,
+      1,
+      initDuration(minutes = 1).inNanoseconds,
+      16
+    ) == FB_OK
+    var allowed: int32
+    check fb_limiter_registry_allow(registry, "login", 5, "user:1", 6, 1, addr allowed) == FB_OK
+    check allowed == 1
+    check fb_limiter_registry_allow(registry, "login", 5, "user:1", 6, 1, addr allowed) == FB_OK
+    check allowed == 0
+    check fb_limiter_registry_allow(registry, "login", 5, "user:2", 6, 1, addr allowed) == FB_OK
+    check allowed == 1
+
+    check fb_limiter_registry_add_token_bucket(
+      registry,
+      "burst",
+      5,
+      1,
+      initDuration(seconds = 1).inNanoseconds,
+      1
+    ) == FB_OK
+    check fb_limiter_registry_consume(registry, "burst", 5, "global", 6, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_limiter_registry_consume(registry, "burst", 5, "global", 6, 1, addr result) == FB_OK
+    check result.allowed == 0
+
+    fb_limiter_registry_destroy(registry)
+
+  test "limiter registry C ABI supports compound limiters":
+    var registry: pointer
+    check fb_limiter_registry_create(addr registry) == FB_OK
+    check fb_limiter_registry_add_keyed_fixed_window(registry, "per_minute", 10, 2, initDuration(minutes = 1).inNanoseconds, 16) == FB_OK
+    check fb_limiter_registry_add_keyed_fixed_window(registry, "per_hour", 8, 3, initDuration(hours = 1).inNanoseconds, 16) == FB_OK
+
+    var names = ["per_minute".cstring, "per_hour".cstring]
+    var lens = [10.csize_t, 8.csize_t]
+    check fb_limiter_registry_add_compound(
+      registry,
+      "contact",
+      7,
+      cast[ptr UncheckedArray[cstring]](addr names[0]),
+      cast[ptr UncheckedArray[csize_t]](addr lens[0]),
+      2
+    ) == FB_OK
+
+    var result: FbRateLimitResult
+    check fb_limiter_registry_consume(registry, "contact", 7, "user:1", 6, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_limiter_registry_consume(registry, "contact", 7, "user:1", 6, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_limiter_registry_consume(registry, "contact", 7, "user:1", 6, 1, addr result) == FB_OK
+    check result.allowed == 0
+    check fb_limiter_registry_inspect(registry, "contact", 7, "user:2", 6, 1, addr result) == FB_OK
+    check result.allowed == 1
+
+    fb_limiter_registry_destroy(registry)
+
+  test "limiter registry C ABI rejects invalid use":
+    var result: FbRateLimitResult
+    var allowed: int32
+    check fb_limiter_registry_create(nil) == FB_ERR_INVALID_ARGUMENT
+
+    var registry: pointer
+    check fb_limiter_registry_create(addr registry) == FB_OK
+    check fb_limiter_registry_add_fixed_window(nil, "global", 6, 1, initDuration(minutes = 1).inNanoseconds) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_add_fixed_window(registry, nil, 0, 1, initDuration(minutes = 1).inNanoseconds) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_add_fixed_window(registry, " ", 1, 1, initDuration(minutes = 1).inNanoseconds) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_add_fixed_window(registry, "global", 6, 0, initDuration(minutes = 1).inNanoseconds) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_add_fixed_window(registry, "global", 6, 1, initDuration(minutes = 1).inNanoseconds) == FB_OK
+    check fb_limiter_registry_add_fixed_window(registry, "global", 6, 1, initDuration(minutes = 1).inNanoseconds) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_consume(registry, "missing", 7, "global", 6, 1, addr result) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_consume(registry, "global", 6, nil, 0, 1, addr result) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_consume(registry, "global", 6, "global", 6, 0, addr result) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_consume(registry, "global", 6, "global", 6, 1, nil) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_allow(registry, "global", 6, "global", 6, 1, nil) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_allow(nil, "global", 6, "global", 6, 1, addr allowed) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_clear(registry, "global", 6, "global", 6, nil) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_limiter_registry_add_compound(registry, "empty", 5, nil, nil, 0) ==
+      FB_ERR_INVALID_ARGUMENT
+    fb_limiter_registry_destroy(registry)

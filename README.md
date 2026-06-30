@@ -540,6 +540,7 @@ The current ABI covers:
 - throttle and debounce state handles
 - retry execution with C operation and sleep callbacks
 - fallback execution with ordered C provider callbacks
+- named limiter registry operations
 
 Build the shared library:
 

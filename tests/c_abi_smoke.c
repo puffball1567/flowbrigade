@@ -45,6 +45,7 @@ int main(void) {
   fb_lock_lease second_lease = 0;
   fb_throttle throttle = 0;
   fb_debouncer debouncer = 0;
+  fb_limiter_registry registry = 0;
   fb_retry_result retry_decision;
   retry_state retry = {0, 0, 0};
   fb_fallback_provider fallback_providers[2];
@@ -245,6 +246,23 @@ int main(void) {
   if (fallback.calls[0] != 1 || fallback.calls[1] != 1) {
     return 40;
   }
+
+  if (fb_limiter_registry_create(&registry) != FB_OK) {
+    return 41;
+  }
+  if (fb_limiter_registry_add_fixed_window(registry, "global", 6, 1, 60000000000LL) != FB_OK) {
+    fb_limiter_registry_destroy(registry);
+    return 42;
+  }
+  if (fb_limiter_registry_consume(registry, "global", 6, "global", 6, 1, &decision) != FB_OK || !decision.allowed) {
+    fb_limiter_registry_destroy(registry);
+    return 43;
+  }
+  if (fb_limiter_registry_consume(registry, "global", 6, "global", 6, 1, &decision) != FB_OK || decision.allowed) {
+    fb_limiter_registry_destroy(registry);
+    return 44;
+  }
+  fb_limiter_registry_destroy(registry);
 
   puts("flowbrigade C ABI smoke test passed");
   return 0;

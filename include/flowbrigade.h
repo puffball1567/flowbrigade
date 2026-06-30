@@ -105,6 +105,7 @@ typedef void* fb_lock_store;
 typedef void* fb_lock_lease;
 typedef void* fb_throttle;
 typedef void* fb_debouncer;
+typedef void* fb_limiter_registry;
 
 void NimMain(void);
 
@@ -191,6 +192,18 @@ int32_t fb_debouncer_cancel(fb_debouncer handle);
 
 int32_t fb_retry_run(fb_backoff_policy policy, int32_t max_attempts, fb_retry_operation operation, fb_retry_sleep sleep, void* user_data, fb_retry_result* out_result);
 int32_t fb_fallback_run(const fb_fallback_provider* providers, size_t provider_count, fb_fallback_predicate should_fallback, fb_fallback_result* out_result);
+
+int32_t fb_limiter_registry_create(fb_limiter_registry* out_handle);
+void fb_limiter_registry_destroy(fb_limiter_registry handle);
+int32_t fb_limiter_registry_add_fixed_window(fb_limiter_registry handle, const char* name, size_t name_len, int32_t limit, int64_t per_ns);
+int32_t fb_limiter_registry_add_sliding_window(fb_limiter_registry handle, const char* name, size_t name_len, int32_t limit, int64_t per_ns);
+int32_t fb_limiter_registry_add_token_bucket(fb_limiter_registry handle, const char* name, size_t name_len, int32_t rate, int64_t per_ns, int32_t burst);
+int32_t fb_limiter_registry_add_keyed_fixed_window(fb_limiter_registry handle, const char* name, size_t name_len, int32_t limit, int64_t per_ns, int32_t max_keys);
+int32_t fb_limiter_registry_add_compound(fb_limiter_registry handle, const char* name, size_t name_len, const char* const* child_names, const size_t* child_name_lens, size_t child_count);
+int32_t fb_limiter_registry_inspect(fb_limiter_registry handle, const char* name, size_t name_len, const char* key, size_t key_len, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_limiter_registry_consume(fb_limiter_registry handle, const char* name, size_t name_len, const char* key, size_t key_len, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_limiter_registry_allow(fb_limiter_registry handle, const char* name, size_t name_len, const char* key, size_t key_len, int32_t cost, int32_t* out_allowed);
+int32_t fb_limiter_registry_clear(fb_limiter_registry handle, const char* name, size_t name_len, const char* key, size_t key_len, int32_t* out_cleared);
 
 #ifdef __cplusplus
 }

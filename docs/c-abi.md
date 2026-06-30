@@ -18,6 +18,7 @@ The first ABI surface is intentionally narrow:
 - throttle and debounce handles
 - retry execution with C callbacks
 - fallback execution with ordered C provider callbacks
+- named limiter registry handles
 
 The ABI does not expose Nim strings, sequences, exceptions, refs, callbacks, or
 framework adapters. Callers own output buffers. FlowBrigade owns opaque handles
@@ -132,6 +133,10 @@ Fallback provider callbacks follow the same status convention. `FB_OK` means the
 provider succeeded; any other status means the provider failed and the next
 provider may be tried. Exhausting providers is reported in `fb_fallback_result`
 rather than as an ABI transport error.
+
+Limiter registries expose named in-memory limiter definitions and compound
+limiters. Storage-backed registry entries are intentionally left to storage
+adapter APIs instead of being hidden behind this first registry ABI.
 
 ## Stability
 

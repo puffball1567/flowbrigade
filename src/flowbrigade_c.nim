@@ -124,6 +124,9 @@ type
   DebouncerHandle = ref object
     debouncer: Debouncer
 
+  LimiterRegistryHandle = ref object
+    registry: LimiterRegistry
+
 var lastAbiError = ""
 
 proc setLastError(message: string) =
@@ -1051,4 +1054,172 @@ proc fb_fallback_run*(
       failedCount: failedCount,
       lastStatus: lastStatus
     )
+    FB_OK
+
+proc fb_limiter_registry_create*(outHandle: ptr pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = LimiterRegistryHandle(registry: initLimiterRegistry())
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_limiter_registry_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[LimiterRegistryHandle](handle))
+
+proc fb_limiter_registry_add_fixed_window*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    limit: int32;
+    perNs: int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    state.registry.addLimiter(copiedName, fixedWindowDefinition(int(limit), durationFromNanos(perNs)))
+    FB_OK
+
+proc fb_limiter_registry_add_sliding_window*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    limit: int32;
+    perNs: int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    state.registry.addLimiter(copiedName, slidingWindowDefinition(int(limit), durationFromNanos(perNs)))
+    FB_OK
+
+proc fb_limiter_registry_add_token_bucket*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    rate: int32;
+    perNs: int64;
+    burst: int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    state.registry.addLimiter(copiedName, tokenBucketDefinition(int(rate), durationFromNanos(perNs), int(burst)))
+    FB_OK
+
+proc fb_limiter_registry_add_keyed_fixed_window*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    limit: int32;
+    perNs: int64;
+    maxKeys: int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    state.registry.addLimiter(
+      copiedName,
+      keyedFixedWindowDefinition(int(limit), durationFromNanos(perNs), maxKeys = int(maxKeys))
+    )
+    FB_OK
+
+proc fb_limiter_registry_add_compound*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    childNames: ptr UncheckedArray[cstring];
+    childNameLens: ptr UncheckedArray[csize_t];
+    childCount: csize_t
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or childNames.isNil or childNameLens.isNil:
+      return abiInvalid("handle, child_names, and child_name_lens must not be nil")
+    if childCount == 0:
+      return abiInvalid("child_count must be positive")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    var copiedChildren: seq[string] = @[]
+    for i in 0 ..< int(childCount):
+      copiedChildren.add(copyRequiredInput(childNames[i], childNameLens[i], "child_name"))
+    state.registry.addCompoundLimiter(copiedName, copiedChildren)
+    FB_OK
+
+proc fb_limiter_registry_inspect*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int32;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeRateLimitResult(outResult, state.registry.inspect(copiedName, copiedKey, int(cost)))
+
+proc fb_limiter_registry_consume*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int32;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeRateLimitResult(outResult, state.registry.consume(copiedName, copiedKey, int(cost)))
+
+proc fb_limiter_registry_allow*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int32;
+    outAllowed: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outAllowed.isNil:
+      return abiInvalid("handle and out_allowed must not be nil")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outAllowed[] = (if state.registry.allow(copiedName, copiedKey, int(cost)): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_limiter_registry_clear*(
+    handle: pointer;
+    name: cstring;
+    nameLen: csize_t;
+    key: cstring;
+    keyLen: csize_t;
+    outCleared: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCleared.isNil:
+      return abiInvalid("handle and out_cleared must not be nil")
+    var state = cast[LimiterRegistryHandle](handle)
+    let copiedName = copyRequiredInput(name, nameLen, "name")
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outCleared[] = (if state.registry.clear(copiedName, copiedKey): 1'i32 else: 0'i32)
     FB_OK
