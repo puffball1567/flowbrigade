@@ -65,6 +65,8 @@ jobs:
         run: |
           gcc -Iinclude tests/c_abi_smoke.c -L/tmp -lflowbrigade -Wl,-rpath,/tmp -o /tmp/flowbrigade-c-abi-smoke
           /tmp/flowbrigade-c-abi-smoke
+          gcc -Iinclude examples/c_abi_quickstart.c -L/tmp -lflowbrigade -Wl,-rpath,/tmp -o /tmp/flowbrigade-c-abi-example
+          /tmp/flowbrigade-c-abi-example
 
       - name: Run Redis adapter unit tests
         run: nim r -p:packages/flowbrigade_redis/src -p:src packages/flowbrigade_redis/tests/test_flowbrigade_redis.nim

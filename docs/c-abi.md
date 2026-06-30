@@ -12,6 +12,7 @@ The first ABI surface is intentionally narrow:
 - sliding window handles
 - circuit breaker handles
 - bulkhead handles
+- timeout and deadline handles
 
 The ABI does not expose Nim strings, sequences, exceptions, refs, callbacks, or
 framework adapters. Callers own output buffers. FlowBrigade owns opaque handles
@@ -33,6 +34,37 @@ nim c --app:lib -p:src --out:/tmp/libflowbrigade.so src/flowbrigade_c.nim
 ```
 
 The C declarations are in [include/flowbrigade.h](../include/flowbrigade.h).
+
+## C Example
+
+```c
+#include <stdint.h>
+#include <stdio.h>
+
+#include "flowbrigade.h"
+
+int main(void) {
+  int64_t nanos = 0;
+
+  NimMain();
+
+  if (fb_duration_parse("1s500ms", 7, &nanos) != FB_OK) {
+    fprintf(stderr, "%s\n", fb_last_error());
+    return 1;
+  }
+
+  printf("%lld\n", (long long)nanos);
+  return 0;
+}
+```
+
+Compile against a locally built shared library:
+
+```sh
+nimble cabi
+gcc -Iinclude examples/c_abi_quickstart.c -L/tmp -lflowbrigade -Wl,-rpath,/tmp -o /tmp/flowbrigade-c-abi-example
+/tmp/flowbrigade-c-abi-example
+```
 
 ## Runtime Initialization
 
@@ -60,6 +92,20 @@ Every fallible function returns an integer status code:
 
 Nim exceptions are caught at the ABI boundary and converted into these status
 codes. No exception should cross into C.
+
+`fb_last_error()` returns diagnostic text for the most recent ABI error. The
+current implementation stores this text process-wide, so callers should not
+treat it as thread-local state.
+
+`fb_abi_version()` returns the integer ABI version. Bindings should check this
+before assuming newer functions exist.
+
+## Thread Safety
+
+Opaque handles are mutable and are not internally synchronized. Do not mutate
+the same handle from multiple threads without application-level locking. Create
+separate handles per thread, or protect shared handles with the host language's
+synchronization primitive.
 
 ## Stability
 

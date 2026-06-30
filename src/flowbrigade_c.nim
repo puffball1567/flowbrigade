@@ -5,8 +5,11 @@ import flowbrigade/bulkhead
 import flowbrigade/circuit_breaker
 import flowbrigade/durations
 import flowbrigade/ratelimit
+import flowbrigade/timeout
 
 const
+  FB_ABI_VERSION* = 1.cint
+
   FB_OK* = 0.cint
   FB_ERR_INVALID_ARGUMENT* = 1.cint
   FB_ERR_BUFFER_TOO_SMALL* = 2.cint
@@ -53,6 +56,25 @@ type
   BulkheadHandle = ref object
     limiter: Bulkhead
 
+  TimeoutHandle = ref object
+    timeout: Timeout
+
+  DeadlineHandle = ref object
+    deadline: Deadline
+
+var lastAbiError = ""
+
+proc setLastError(message: string) =
+  lastAbiError = message
+
+proc abiInvalid(message: string): cint =
+  setLastError(message)
+  FB_ERR_INVALID_ARGUMENT
+
+proc abiBufferTooSmall(message: string): cint =
+  setLastError(message)
+  FB_ERR_BUFFER_TOO_SMALL
+
 proc durationFromNanos(nanos: int64): Duration =
   initDuration(nanoseconds = nanos)
 
@@ -64,7 +86,7 @@ proc copyInput(input: cstring; inputLen: csize_t): string =
 
 proc writeRateLimitResult(outResult: ptr FbRateLimitResult; decision: RateLimitResult): cint =
   if outResult.isNil:
-    return FB_ERR_INVALID_ARGUMENT
+    return abiInvalid("out_result must not be nil")
   outResult[] = FbRateLimitResult(
     allowed: (if decision.allowed: 1'i32 else: 0'i32),
     limit: int32(decision.limit),
@@ -76,7 +98,7 @@ proc writeRateLimitResult(outResult: ptr FbRateLimitResult; decision: RateLimitR
 
 proc writeBulkheadResult(outResult: ptr FbBulkheadResult; decision: BulkheadResult): cint =
   if outResult.isNil:
-    return FB_ERR_INVALID_ARGUMENT
+    return abiInvalid("out_result must not be nil")
   outResult[] = FbBulkheadResult(
     allowed: (if decision.allowed: 1'i32 else: 0'i32),
     capacity: int32(decision.capacity),
@@ -95,12 +117,21 @@ proc jitterFromAbi(value: int32): JitterKind =
     raise newException(ValueError, "invalid jitter kind")
 
 template catchAbiErrors(body: untyped): cint =
+  setLastError("")
   try:
     body
-  except ValueError:
+  except ValueError as exc:
+    setLastError(exc.msg)
     FB_ERR_INVALID_ARGUMENT
-  except CatchableError:
+  except CatchableError as exc:
+    setLastError(exc.msg)
     FB_ERR_INTERNAL
+
+proc fb_abi_version*(): cint {.cdecl, exportc, dynlib.} =
+  FB_ABI_VERSION
+
+proc fb_last_error*(): cstring {.cdecl, exportc, dynlib.} =
+  cstring(lastAbiError)
 
 proc fb_duration_parse*(
     input: cstring;
@@ -109,7 +140,7 @@ proc fb_duration_parse*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if input.isNil or outNs.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("input and out_ns must not be nil")
     outNs[] = parseDuration(copyInput(input, inputLen)).inNanoseconds
     FB_OK
 
@@ -121,11 +152,11 @@ proc fb_duration_format*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if outLen.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("out_len must not be nil")
     let text = formatDuration(durationFromNanos(durationNs))
     outLen[] = csize_t(text.len)
     if buffer.isNil or bufferLen <= csize_t(text.len):
-      return FB_ERR_BUFFER_TOO_SMALL
+      return abiBufferTooSmall("duration output buffer is too small")
     let outBuffer = cast[ptr UncheckedArray[char]](buffer)
     copyMem(addr outBuffer[0], cstring(text), text.len)
     outBuffer[text.len] = '\0'
@@ -138,7 +169,7 @@ proc fb_fixed_backoff_create*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if outHandle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("out_handle must not be nil")
     let handle = BackoffPolicyHandle(
       policy: fixedBackoff(durationFromNanos(delayNs), jitterFromAbi(jitter))
     )
@@ -155,7 +186,7 @@ proc fb_linear_backoff_create*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if outHandle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("out_handle must not be nil")
     let handle = BackoffPolicyHandle(
       policy: linearBackoff(
         durationFromNanos(initialNs),
@@ -177,7 +208,7 @@ proc fb_exp_backoff_create*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if outHandle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("out_handle must not be nil")
     let handle = BackoffPolicyHandle(
       policy: expBackoff(
         initial = durationFromNanos(initialNs),
@@ -201,7 +232,7 @@ proc fb_backoff_delay_for*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil or outDelayNs.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle and out_delay_ns must not be nil")
     let state = cast[BackoffPolicyHandle](handle)
     outDelayNs[] = state.policy.delayFor(int(attempt)).inNanoseconds
     FB_OK
@@ -214,7 +245,7 @@ proc fb_token_bucket_create*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if outHandle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("out_handle must not be nil")
     let handle = TokenBucketHandle(
       limiter: initTokenBucket(int(rate), durationFromNanos(perNs), int(burst))
     )
@@ -233,7 +264,7 @@ proc fb_token_bucket_inspect*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[TokenBucketHandle](handle)
     writeRateLimitResult(outResult, state.limiter.inspect(int(cost)))
 
@@ -244,7 +275,7 @@ proc fb_token_bucket_consume*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[TokenBucketHandle](handle)
     writeRateLimitResult(outResult, state.limiter.consume(int(cost)))
 
@@ -255,7 +286,7 @@ proc fb_fixed_window_create*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if outHandle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("out_handle must not be nil")
     let handle = FixedWindowHandle(
       limiter: initFixedWindow(int(limit), durationFromNanos(perNs))
     )
@@ -274,7 +305,7 @@ proc fb_fixed_window_inspect*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[FixedWindowHandle](handle)
     writeRateLimitResult(outResult, state.limiter.inspect(int(cost)))
 
@@ -285,7 +316,7 @@ proc fb_fixed_window_consume*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[FixedWindowHandle](handle)
     writeRateLimitResult(outResult, state.limiter.consume(int(cost)))
 
@@ -296,7 +327,7 @@ proc fb_sliding_window_create*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if outHandle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("out_handle must not be nil")
     let handle = SlidingWindowHandle(
       limiter: initSlidingWindow(int(limit), durationFromNanos(perNs))
     )
@@ -315,7 +346,7 @@ proc fb_sliding_window_inspect*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[SlidingWindowHandle](handle)
     writeRateLimitResult(outResult, state.limiter.inspect(int(cost)))
 
@@ -326,7 +357,7 @@ proc fb_sliding_window_consume*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[SlidingWindowHandle](handle)
     writeRateLimitResult(outResult, state.limiter.consume(int(cost)))
 
@@ -337,7 +368,7 @@ proc fb_circuit_breaker_create*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if outHandle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("out_handle must not be nil")
     let handle = CircuitBreakerHandle(
       breaker: initCircuitBreaker(int(failureThreshold), durationFromNanos(resetAfterNs))
     )
@@ -355,7 +386,7 @@ proc fb_circuit_breaker_allow*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil or outAllowed.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle and out_allowed must not be nil")
     var state = cast[CircuitBreakerHandle](handle)
     outAllowed[] = (if state.breaker.allow(): 1'i32 else: 0'i32)
     FB_OK
@@ -363,7 +394,7 @@ proc fb_circuit_breaker_allow*(
 proc fb_circuit_breaker_record_success*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[CircuitBreakerHandle](handle)
     state.breaker.recordSuccess()
     FB_OK
@@ -371,7 +402,7 @@ proc fb_circuit_breaker_record_success*(handle: pointer): cint {.cdecl, exportc,
 proc fb_circuit_breaker_record_failure*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[CircuitBreakerHandle](handle)
     state.breaker.recordFailure()
     FB_OK
@@ -382,7 +413,7 @@ proc fb_circuit_breaker_state*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil or outState.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle and out_state must not be nil")
     let state = cast[CircuitBreakerHandle](handle).breaker.state()
     outState[] = case state
       of circuitClosed: FB_CIRCUIT_CLOSED
@@ -396,7 +427,7 @@ proc fb_bulkhead_create*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if outHandle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("out_handle must not be nil")
     let handle = BulkheadHandle(limiter: initBulkhead(int(capacity)))
     GC_ref(handle)
     outHandle[] = cast[pointer](handle)
@@ -412,7 +443,7 @@ proc fb_bulkhead_inspect*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     let state = cast[BulkheadHandle](handle)
     writeBulkheadResult(outResult, state.limiter.inspect())
 
@@ -422,14 +453,113 @@ proc fb_bulkhead_acquire*(
 ): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[BulkheadHandle](handle)
     writeBulkheadResult(outResult, state.limiter.acquire())
 
 proc fb_bulkhead_release*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
   catchAbiErrors:
     if handle.isNil:
-      return FB_ERR_INVALID_ARGUMENT
+      return abiInvalid("handle must not be nil")
     var state = cast[BulkheadHandle](handle)
     state.limiter.release()
+    FB_OK
+
+proc fb_timeout_create*(
+    afterNs: int64;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = TimeoutHandle(timeout: initTimeout(durationFromNanos(afterNs)))
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_timeout_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[TimeoutHandle](handle))
+
+proc fb_timeout_expired*(
+    handle: pointer;
+    outExpired: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outExpired.isNil:
+      return abiInvalid("handle and out_expired must not be nil")
+    let state = cast[TimeoutHandle](handle)
+    outExpired[] = (if state.timeout.expired(): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_timeout_elapsed*(
+    handle: pointer;
+    outElapsedNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outElapsedNs.isNil:
+      return abiInvalid("handle and out_elapsed_ns must not be nil")
+    let state = cast[TimeoutHandle](handle)
+    outElapsedNs[] = state.timeout.elapsed().inNanoseconds
+    FB_OK
+
+proc fb_timeout_remaining*(
+    handle: pointer;
+    outRemainingNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outRemainingNs.isNil:
+      return abiInvalid("handle and out_remaining_ns must not be nil")
+    let state = cast[TimeoutHandle](handle)
+    outRemainingNs[] = state.timeout.remaining().inNanoseconds
+    FB_OK
+
+proc fb_deadline_create*(
+    afterNs: int64;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = DeadlineHandle(deadline: initDeadline(durationFromNanos(afterNs)))
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_deadline_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[DeadlineHandle](handle))
+
+proc fb_deadline_expired*(
+    handle: pointer;
+    outExpired: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outExpired.isNil:
+      return abiInvalid("handle and out_expired must not be nil")
+    let state = cast[DeadlineHandle](handle)
+    outExpired[] = (if state.deadline.expired(): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_deadline_remaining*(
+    handle: pointer;
+    outRemainingNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outRemainingNs.isNil:
+      return abiInvalid("handle and out_remaining_ns must not be nil")
+    let state = cast[DeadlineHandle](handle)
+    outRemainingNs[] = state.deadline.remaining().inNanoseconds
+    FB_OK
+
+proc fb_deadline_clamp*(
+    handle: pointer;
+    requestedNs: int64;
+    outClampedNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outClampedNs.isNil:
+      return abiInvalid("handle and out_clamped_ns must not be nil")
+    let state = cast[DeadlineHandle](handle)
+    outClampedNs[] = state.deadline.clamp(durationFromNanos(requestedNs)).inNanoseconds
     FB_OK

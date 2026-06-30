@@ -49,8 +49,13 @@ typedef void* fb_fixed_window;
 typedef void* fb_sliding_window;
 typedef void* fb_circuit_breaker;
 typedef void* fb_bulkhead;
+typedef void* fb_timeout;
+typedef void* fb_deadline;
 
 void NimMain(void);
+
+int32_t fb_abi_version(void);
+const char* fb_last_error(void);
 
 int32_t fb_duration_parse(const char* input, size_t input_len, int64_t* out_ns);
 int32_t fb_duration_format(int64_t duration_ns, char* buffer, size_t buffer_len, size_t* out_len);
@@ -88,6 +93,18 @@ void fb_bulkhead_destroy(fb_bulkhead handle);
 int32_t fb_bulkhead_inspect(fb_bulkhead handle, fb_bulkhead_result* out_result);
 int32_t fb_bulkhead_acquire(fb_bulkhead handle, fb_bulkhead_result* out_result);
 int32_t fb_bulkhead_release(fb_bulkhead handle);
+
+int32_t fb_timeout_create(int64_t after_ns, fb_timeout* out_handle);
+void fb_timeout_destroy(fb_timeout handle);
+int32_t fb_timeout_expired(fb_timeout handle, int32_t* out_expired);
+int32_t fb_timeout_elapsed(fb_timeout handle, int64_t* out_elapsed_ns);
+int32_t fb_timeout_remaining(fb_timeout handle, int64_t* out_remaining_ns);
+
+int32_t fb_deadline_create(int64_t after_ns, fb_deadline* out_handle);
+void fb_deadline_destroy(fb_deadline handle);
+int32_t fb_deadline_expired(fb_deadline handle, int32_t* out_expired);
+int32_t fb_deadline_remaining(fb_deadline handle, int64_t* out_remaining_ns);
+int32_t fb_deadline_clamp(fb_deadline handle, int64_t requested_ns, int64_t* out_clamped_ns);
 
 #ifdef __cplusplus
 }

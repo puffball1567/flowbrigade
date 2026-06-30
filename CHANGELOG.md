@@ -73,6 +73,7 @@ work so the first public release has a clear history.
 - Added practical recipes for API abuse protection, password reset throttling,
   and multi-tenant quotas.
 - Added an experimental C ABI layer with duration, backoff, token bucket, fixed
-  window, sliding window, circuit breaker, and bulkhead handles for future
-  cross-language bindings.
+  window, sliding window, circuit breaker, bulkhead, timeout, and deadline
+  handles for future cross-language bindings.
+- Added C ABI version reporting, diagnostic error text, and a C smoke example.
 - Added language-neutral specification notes for portable FlowBrigade ports.

@@ -23,6 +23,7 @@ nim doc --nimcache:/tmp/flowbrigade-nimcache -p:src --outdir:/tmp/flowbrigade-do
 nimble --nimbleDir:/tmp/flowbrigade-nimble --useSystemNim check
 nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim cabi
 gcc -Iinclude tests/c_abi_smoke.c -L/tmp -lflowbrigade -Wl,-rpath,/tmp -o /tmp/flowbrigade-c-abi-smoke && /tmp/flowbrigade-c-abi-smoke
+gcc -Iinclude examples/c_abi_quickstart.c -L/tmp -lflowbrigade -Wl,-rpath,/tmp -o /tmp/flowbrigade-c-abi-example && /tmp/flowbrigade-c-abi-example
 nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim benchmark
 nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim snippets
 nim r --nimcache:/tmp/flowbrigade-redis-nimcache -p:packages/flowbrigade_redis/src -p:src packages/flowbrigade_redis/tests/test_flowbrigade_redis.nim

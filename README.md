@@ -534,6 +534,7 @@ The current ABI covers:
 - token bucket, fixed window, and sliding window rate limiters
 - circuit breaker state transitions
 - bulkhead permit tracking
+- timeout/deadline checks and remaining-time helpers
 
 Build the shared library:
 
@@ -544,7 +545,9 @@ nimble cabi
 The C declarations live in [include/flowbrigade.h](include/flowbrigade.h).
 Call `NimMain()` once before calling `fb_*` functions from a non-Nim host
 process. The ABI uses opaque handles, caller-owned buffers, fixed structs, and
-integer status codes; Nim exceptions do not cross the boundary.
+integer status codes; Nim exceptions do not cross the boundary. Use
+`fb_abi_version()` for compatibility checks and `fb_last_error()` for diagnostic
+text after a failed ABI call.
 
 See [docs/c-abi.md](docs/c-abi.md) for details and
 [docs/spec.md](docs/spec.md) for the language-neutral behavior model.

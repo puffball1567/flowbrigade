@@ -3,6 +3,14 @@ import std/[times, unittest]
 import flowbrigade_c
 
 suite "C ABI":
+  test "reports ABI version and last error":
+    check fb_abi_version() == 1
+    check fb_last_error() != nil
+
+    var nanos: int64
+    check fb_duration_parse("bad", 3, addr nanos) == FB_ERR_INVALID_ARGUMENT
+    check ($fb_last_error()).len > 0
+
   test "parses and formats durations through stable buffers":
     var nanos: int64
     check fb_duration_parse("1s500ms", 7, addr nanos) == FB_OK
@@ -162,11 +170,51 @@ suite "C ABI":
 
     fb_bulkhead_destroy(handle)
 
+  test "timeout and deadline handles expose elapsed state":
+    var timeoutHandle: pointer
+    check fb_timeout_create(initDuration(seconds = 1).inNanoseconds, addr timeoutHandle) == FB_OK
+    check not timeoutHandle.isNil
+
+    var flag: int32
+    var elapsedNs: int64
+    var remainingNs: int64
+    check fb_timeout_expired(timeoutHandle, addr flag) == FB_OK
+    check flag == 0
+    check fb_timeout_elapsed(timeoutHandle, addr elapsedNs) == FB_OK
+    check elapsedNs >= 0
+    check fb_timeout_remaining(timeoutHandle, addr remainingNs) == FB_OK
+    check remainingNs > 0
+    check remainingNs <= initDuration(seconds = 1).inNanoseconds
+    fb_timeout_destroy(timeoutHandle)
+
+    var zeroTimeout: pointer
+    check fb_timeout_create(0, addr zeroTimeout) == FB_OK
+    check fb_timeout_expired(zeroTimeout, addr flag) == FB_OK
+    check flag == 1
+    fb_timeout_destroy(zeroTimeout)
+
+    var deadlineHandle: pointer
+    check fb_deadline_create(initDuration(seconds = 1).inNanoseconds, addr deadlineHandle) == FB_OK
+    check not deadlineHandle.isNil
+    check fb_deadline_expired(deadlineHandle, addr flag) == FB_OK
+    check flag == 0
+    check fb_deadline_remaining(deadlineHandle, addr remainingNs) == FB_OK
+    check remainingNs > 0
+
+    var clampedNs: int64
+    check fb_deadline_clamp(deadlineHandle, initDuration(seconds = 10).inNanoseconds, addr clampedNs) == FB_OK
+    check clampedNs <= initDuration(seconds = 1).inNanoseconds
+    check clampedNs > 0
+    fb_deadline_destroy(deadlineHandle)
+
   test "C ABI rejects invalid arguments as error codes":
     var result: FbRateLimitResult
     check fb_token_bucket_consume(nil, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+    check ($fb_last_error()).len > 0
     check fb_fixed_window_create(0, initDuration(seconds = 1).inNanoseconds, nil) ==
       FB_ERR_INVALID_ARGUMENT
     check fb_duration_parse(nil, 0, nil) == FB_ERR_INVALID_ARGUMENT
     check fb_backoff_delay_for(nil, 1, nil) == FB_ERR_INVALID_ARGUMENT
     check fb_bulkhead_create(0, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_timeout_create(-1, nil) == FB_ERR_INVALID_ARGUMENT
+    check fb_deadline_clamp(nil, 1, nil) == FB_ERR_INVALID_ARGUMENT

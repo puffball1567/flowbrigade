@@ -8,11 +8,17 @@ int main(void) {
   fb_token_bucket bucket = 0;
   fb_backoff_policy backoff = 0;
   fb_bulkhead bulkhead = 0;
+  fb_timeout timeout = 0;
   fb_rate_limit_result decision;
   fb_bulkhead_result bulkhead_decision;
   int64_t delay_ns = 0;
+  int32_t expired = 0;
 
   NimMain();
+
+  if (fb_abi_version() < 1) {
+    return 11;
+  }
 
   if (fb_duration_parse("1s500ms", 7, &nanos) != FB_OK) {
     return 1;
@@ -56,6 +62,15 @@ int main(void) {
     return 10;
   }
   fb_bulkhead_destroy(bulkhead);
+
+  if (fb_timeout_create(1000000000LL, &timeout) != FB_OK) {
+    return 12;
+  }
+  if (fb_timeout_expired(timeout, &expired) != FB_OK || expired) {
+    fb_timeout_destroy(timeout);
+    return 13;
+  }
+  fb_timeout_destroy(timeout);
 
   puts("flowbrigade C ABI smoke test passed");
   return 0;

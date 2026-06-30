@@ -64,8 +64,14 @@ Bulkheads track permits for concurrent work. `inspect` reports current permit
 state, `acquire` consumes one permit when capacity remains, and `release`
 returns one permit. Releasing without an acquired permit is an error.
 
+## Timeout And Deadline
+
+Timeouts track elapsed time from construction. Deadlines track a monotonic end
+point. Portable bindings should expose `expired`, `remaining`, and elapsed or
+clamp helpers without attempting to cancel running work.
+
 ## ABI Boundary
 
 Portable bindings should avoid language-specific memory ownership crossing the
-boundary. The C ABI uses opaque handles, fixed structs, caller-owned buffers, and
-integer status codes.
+boundary. The C ABI uses opaque handles, fixed structs, caller-owned buffers,
+integer status codes, ABI version reporting, and diagnostic error text.

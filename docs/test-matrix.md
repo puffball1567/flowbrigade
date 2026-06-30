@@ -562,6 +562,8 @@ make gaps visible before adding new features.
 | sliding window handle | create, consume, denial, destroy |
 | circuit breaker handle | create, allow, record failure, state, destroy |
 | bulkhead handle | create, inspect, acquire, release, destroy |
+| timeout and deadline handles | create, expired, elapsed/remaining, clamp, destroy |
+| ABI metadata | `fb_abi_version` and `fb_last_error` |
 | invalid arguments | converted to `FB_ERR_INVALID_ARGUMENT` |
 | C link smoke test | builds and runs against `include/flowbrigade.h` |
 
