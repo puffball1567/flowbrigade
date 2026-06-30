@@ -3,6 +3,26 @@
 
 #include "flowbrigade.h"
 
+typedef struct retry_state {
+  int32_t calls;
+  int32_t sleep_calls;
+  int64_t last_delay_ns;
+} retry_state;
+
+static int32_t retry_operation(void* user_data, int32_t attempt) {
+  retry_state* state = (retry_state*)user_data;
+  state->calls = attempt;
+  return attempt >= 3 ? FB_OK : 77;
+}
+
+static int32_t retry_sleep(void* user_data, int64_t delay_ns, int32_t attempt) {
+  retry_state* state = (retry_state*)user_data;
+  (void)attempt;
+  state->sleep_calls++;
+  state->last_delay_ns = delay_ns;
+  return FB_OK;
+}
+
 int main(void) {
   int64_t nanos = 0;
   fb_token_bucket bucket = 0;
@@ -15,6 +35,8 @@ int main(void) {
   fb_lock_lease second_lease = 0;
   fb_throttle throttle = 0;
   fb_debouncer debouncer = 0;
+  fb_retry_result retry_decision;
+  retry_state retry = {0, 0, 0};
   fb_rate_limit_result decision;
   fb_bulkhead_result bulkhead_decision;
   fb_budget_result budget_decision;
@@ -176,6 +198,23 @@ int main(void) {
     return 33;
   }
   fb_debouncer_destroy(debouncer);
+
+  if (fb_fixed_backoff_create(50000000LL, FB_NO_JITTER, &backoff) != FB_OK) {
+    return 34;
+  }
+  if (fb_retry_run(backoff, 5, retry_operation, retry_sleep, &retry, &retry_decision) != FB_OK) {
+    fb_backoff_destroy(backoff);
+    return 35;
+  }
+  if (!retry_decision.succeeded || retry_decision.attempts != 3 || retry.sleep_calls != 2) {
+    fb_backoff_destroy(backoff);
+    return 36;
+  }
+  if (retry.last_delay_ns != 50000000LL) {
+    fb_backoff_destroy(backoff);
+    return 37;
+  }
+  fb_backoff_destroy(backoff);
 
   puts("flowbrigade C ABI smoke test passed");
   return 0;

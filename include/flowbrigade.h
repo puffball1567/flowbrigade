@@ -65,6 +65,16 @@ typedef struct fb_lock_status {
   int64_t remaining_ns;
 } fb_lock_status;
 
+typedef struct fb_retry_result {
+  int32_t succeeded;
+  int32_t attempts;
+  int32_t last_status;
+  int64_t last_delay_ns;
+} fb_retry_result;
+
+typedef int32_t (*fb_retry_operation)(void* user_data, int32_t attempt);
+typedef int32_t (*fb_retry_sleep)(void* user_data, int64_t delay_ns, int32_t attempt);
+
 typedef void* fb_backoff_policy;
 typedef void* fb_token_bucket;
 typedef void* fb_fixed_window;
@@ -161,6 +171,8 @@ int32_t fb_debouncer_call(fb_debouncer handle);
 int32_t fb_debouncer_ready(fb_debouncer handle, int32_t* out_ready);
 int32_t fb_debouncer_consume_ready(fb_debouncer handle, int32_t* out_ready);
 int32_t fb_debouncer_cancel(fb_debouncer handle);
+
+int32_t fb_retry_run(fb_backoff_policy policy, int32_t max_attempts, fb_retry_operation operation, fb_retry_sleep sleep, void* user_data, fb_retry_result* out_result);
 
 #ifdef __cplusplus
 }

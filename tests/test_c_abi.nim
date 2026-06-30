@@ -2,6 +2,34 @@ import std/[times, unittest]
 
 import flowbrigade_c
 
+type RetryState = object
+  calls: int32
+  succeedAt: int32
+  sleepCalls: int32
+  failSleep: int32
+  lastDelayNs: int64
+
+proc retryOperation(userData: pointer; attempt: int32): cint {.cdecl.} =
+  let state = cast[ptr RetryState](userData)
+  state.calls = attempt
+  if attempt >= state.succeedAt:
+    FB_OK
+  else:
+    77.cint
+
+proc retryNeverOperation(userData: pointer; attempt: int32): cint {.cdecl.} =
+  let state = cast[ptr RetryState](userData)
+  state.calls = attempt
+  88.cint
+
+proc retrySleep(userData: pointer; delayNs: int64; attempt: int32): cint {.cdecl.} =
+  let state = cast[ptr RetryState](userData)
+  inc state.sleepCalls
+  state.lastDelayNs = delayNs
+  if state.failSleep == 1:
+    return 66.cint
+  FB_OK
+
 suite "C ABI":
   test "reports ABI version and last error":
     check fb_abi_version() == 1
@@ -380,3 +408,43 @@ suite "C ABI":
     check fb_debouncer_consume_ready(nil, nil) == FB_ERR_INVALID_ARGUMENT
     check fb_debouncer_cancel(nil) == FB_ERR_INVALID_ARGUMENT
     fb_debouncer_destroy(debouncerHandle)
+
+  test "retry callback ABI retries operation callbacks":
+    var policy: pointer
+    check fb_fixed_backoff_create(initDuration(milliseconds = 25).inNanoseconds, FB_NO_JITTER, addr policy) == FB_OK
+
+    var state = RetryState(succeedAt: 3)
+    var result: FbRetryResult
+    check fb_retry_run(policy, 5, retryOperation, retrySleep, addr state, addr result) == FB_OK
+    check result.succeeded == 1
+    check result.attempts == 3
+    check result.lastStatus == FB_OK
+    check state.calls == 3
+    check state.sleepCalls == 2
+    check state.lastDelayNs == initDuration(milliseconds = 25).inNanoseconds
+
+    var failedState = RetryState()
+    check fb_retry_run(policy, 2, retryNeverOperation, retrySleep, addr failedState, addr result) == FB_OK
+    check result.succeeded == 0
+    check result.attempts == 2
+    check result.lastStatus == 88
+    check failedState.sleepCalls == 1
+
+    var sleepFailureState = RetryState(succeedAt: 3, failSleep: 1)
+    check fb_retry_run(policy, 3, retryOperation, retrySleep, addr sleepFailureState, addr result) ==
+      FB_ERR_INVALID_ARGUMENT
+    check result.succeeded == 0
+    check result.attempts == 1
+    check result.lastStatus == 66
+
+    fb_backoff_destroy(policy)
+
+  test "retry callback ABI rejects invalid arguments":
+    var result: FbRetryResult
+    var policy: pointer
+    check fb_fixed_backoff_create(initDuration(milliseconds = 25).inNanoseconds, FB_NO_JITTER, addr policy) == FB_OK
+    check fb_retry_run(nil, 3, retryOperation, nil, nil, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_retry_run(policy, 0, retryOperation, nil, nil, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_retry_run(policy, 3, nil, nil, nil, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_retry_run(policy, 3, retryOperation, nil, nil, nil) == FB_ERR_INVALID_ARGUMENT
+    fb_backoff_destroy(policy)

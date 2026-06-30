@@ -16,6 +16,7 @@ The first ABI surface is intentionally narrow:
 - budget ledger handles
 - in-memory lock store and lease handles
 - throttle and debounce handles
+- retry execution with C callbacks
 
 The ABI does not expose Nim strings, sequences, exceptions, refs, callbacks, or
 framework adapters. Callers own output buffers. FlowBrigade owns opaque handles
@@ -120,6 +121,11 @@ API, including trimming surrounding whitespace and rejecting empty keys.
 Lock lease tokens stay inside opaque `fb_lock_lease` handles. Foreign callers
 should release or inspect leases through the handle and destroy each lease handle
 when it is no longer needed.
+
+Retry callbacks return integer status codes. `FB_OK` means the operation
+succeeded; any other value is treated as an operation failure that may be
+retried. Exhausting attempts is reported in `fb_retry_result` rather than as an
+ABI transport error.
 
 ## Stability
 

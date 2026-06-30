@@ -76,5 +76,6 @@ work so the first public release has a clear history.
   window, sliding window, circuit breaker, bulkhead, timeout, and deadline
   handles for future cross-language bindings.
 - Added C ABI version reporting, diagnostic error text, budget ledger handles,
-  in-memory lock handles, throttle/debounce handles, and a C smoke example.
+  in-memory lock handles, throttle/debounce handles, retry callbacks, and a C
+  smoke example.
 - Added language-neutral specification notes for portable FlowBrigade ports.

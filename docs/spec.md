@@ -92,6 +92,14 @@ the interval has elapsed or the throttle is reset. Debouncers track pending work
 after a call, become ready after a quiet delay, and clear pending state when
 ready work is consumed or canceled.
 
+## Retry Callback ABI
+
+Portable callback ABIs should treat operation failure as retry state, not as an
+ABI transport failure. A successful callback returns the ABI success status.
+Other callback status values are recorded as operation failures until attempts
+are exhausted. Sleep callbacks are optional and receive the computed backoff
+delay before the next attempt.
+
 ## ABI Boundary
 
 Portable bindings should avoid language-specific memory ownership crossing the

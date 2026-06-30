@@ -61,6 +61,15 @@ type
     ttlNs*: int64
     remainingNs*: int64
 
+  FbRetryResult* {.bycopy.} = object
+    succeeded*: int32
+    attempts*: int32
+    lastStatus*: int32
+    lastDelayNs*: int64
+
+  FbRetryOperation* = proc(userData: pointer; attempt: int32): cint {.cdecl.}
+  FbRetrySleep* = proc(userData: pointer; delayNs: int64; attempt: int32): cint {.cdecl.}
+
   BackoffPolicyHandle = ref object
     policy: BackoffPolicy
 
@@ -902,4 +911,57 @@ proc fb_debouncer_cancel*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
       return abiInvalid("handle must not be nil")
     var state = cast[DebouncerHandle](handle)
     state.debouncer.cancel()
+    FB_OK
+
+proc fb_retry_run*(
+    policyHandle: pointer;
+    maxAttempts: int32;
+    operation: FbRetryOperation;
+    sleep: FbRetrySleep;
+    userData: pointer;
+    outResult: ptr FbRetryResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if policyHandle.isNil or operation.isNil or outResult.isNil:
+      return abiInvalid("policy, operation, and out_result must not be nil")
+    if maxAttempts < 1:
+      return abiInvalid("max_attempts must be at least 1")
+
+    let policy = cast[BackoffPolicyHandle](policyHandle).policy
+    var attempt = 1'i32
+    var lastStatus = FB_OK
+    var lastDelayNs = 0'i64
+
+    while true:
+      lastStatus = operation(userData, attempt)
+      if lastStatus == FB_OK:
+        outResult[] = FbRetryResult(
+          succeeded: 1'i32,
+          attempts: attempt,
+          lastStatus: lastStatus,
+          lastDelayNs: lastDelayNs
+        )
+        return FB_OK
+
+      if attempt >= maxAttempts:
+        outResult[] = FbRetryResult(
+          succeeded: 0'i32,
+          attempts: attempt,
+          lastStatus: lastStatus,
+          lastDelayNs: lastDelayNs
+        )
+        return FB_OK
+
+      lastDelayNs = policy.delayFor(int(attempt)).inNanoseconds
+      if not sleep.isNil:
+        let sleepStatus = sleep(userData, lastDelayNs, attempt)
+        if sleepStatus != FB_OK:
+          outResult[] = FbRetryResult(
+            succeeded: 0'i32,
+            attempts: attempt,
+            lastStatus: sleepStatus,
+            lastDelayNs: lastDelayNs
+          )
+          return abiInvalid("retry sleep callback returned an error")
+      inc attempt
     FB_OK

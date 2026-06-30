@@ -538,6 +538,7 @@ The current ABI covers:
 - budget ledger quota checks, refunds, and resets
 - in-memory lock stores with opaque lease handles
 - throttle and debounce state handles
+- retry execution with C operation and sleep callbacks
 
 Build the shared library:
 
