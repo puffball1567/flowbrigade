@@ -1,8 +1,8 @@
 # Performance notes
 
 FlowBrigade should stay predictable under routine application load. These notes
-are not benchmark results yet; they document the expected cost model and the
-places worth measuring before a release.
+document the expected cost model and the local smoke benchmarks available for
+regression checks. They are not official cross-machine performance claims.
 
 ## Core limiters
 
@@ -21,16 +21,17 @@ a concrete reason to accept larger values.
 
 ## Redis adapter
 
-Redis fixed-window and token-bucket operations are one `EVAL` call each. This
-keeps decisions atomic but means network latency dominates per-request cost.
+Redis fixed-window, token-bucket, and keyed token-bucket operations are one
+`EVAL` call each. This keeps decisions atomic but means network latency
+dominates per-request cost.
 
 Use Redis-backed limiters when state must be shared across processes. For
 single-process tools, in-memory limiters avoid network cost.
 
 ## Benchmark smoke tests
 
-A small benchmark smoke suite lives in `benchmarks/core_bench.nim` and can be
-run with:
+A small benchmark smoke suite lives in `benchmarks/core_bench.nim` and
+`benchmarks/redis_adapter_bench.nim`. It can be run with:
 
 ```sh
 nimble benchmark
@@ -47,7 +48,8 @@ Before publishing a larger release, add repeatable benchmarks for:
 - in-memory token bucket, fixed window, and sliding window `consume`
 - keyed limiter behavior near `maxKeys`
 - stored fixed-window in-memory adapter throughput
-- Redis fixed-window `consume` latency
-- Redis token-bucket `consume` latency
+- Redis fixed-window `consume` latency against a real server
+- Redis token-bucket and keyed token-bucket `consume` latency against a real
+  server
 
 Benchmarks should run separately from unit tests so CI remains fast.

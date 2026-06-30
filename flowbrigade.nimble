@@ -22,6 +22,7 @@ task test, "Run the test suite":
 
 task benchmark, "Run local benchmark smoke tests":
   exec "nim r --nimcache:/tmp/flowbrigade-nimcache -d:release -p:src benchmarks/core_bench.nim"
+  exec "nim r --nimcache:/tmp/flowbrigade-nimcache -d:release -p:src -p:packages/flowbrigade_redis/src benchmarks/redis_adapter_bench.nim"
 
 task cabi, "Build the experimental C ABI shared library":
   exec "nim c --mm:arc --app:lib --nimcache:/tmp/flowbrigade-cabi-nimcache -p:src --out:/tmp/libflowbrigade.so src/flowbrigade_c.nim"
