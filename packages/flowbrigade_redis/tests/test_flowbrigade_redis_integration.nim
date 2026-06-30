@@ -88,3 +88,22 @@ else:
       check limiter.allow()
 
       check limiter.clear()
+
+    test "uses Redis keyed token bucket scripts against a real Redis server":
+      let keyPrefix = "flowbrigade:test:" & $getCurrentProcessId()
+      let storage = initRedisRateLimitStorage(evalWithRedisCli, keyPrefix)
+      let limiter = initRedisKeyedTokenBucket(
+        storage = storage,
+        namespace = "token",
+        rate = 1,
+        per = initDuration(milliseconds = 500),
+        burst = 1
+      )
+
+      check limiter.allow("alice")
+      let denied = limiter.consume("alice")
+      check not denied.allowed
+      check denied.retryAfter > initDuration()
+      check limiter.allow("bob")
+      check limiter.clear("alice")
+      check limiter.allow("alice")

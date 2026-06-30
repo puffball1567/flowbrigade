@@ -25,6 +25,13 @@ type
     per: Duration
     burst: int
 
+  RedisKeyedTokenBucket* = object
+    storage: RedisRateLimitStorage
+    namespace: string
+    rate: int
+    per: Duration
+    burst: int
+
 proc redisRateLimitCapabilities*(): RateLimitCapabilities =
   ## Describes guarantees provided by the Redis Lua-script adapter.
   ##
@@ -202,11 +209,28 @@ proc validateTokenBucketConfig(rate: int; per: Duration; burst: int; key: string
   if key.strip().len == 0:
     raise newException(RateLimitConfigError, "key must not be empty")
 
+proc validateTokenBucketNamespace(rate: int; per: Duration; burst: int; namespace: string) =
+  requirePositive("rate", rate)
+  requirePositive("burst", burst)
+  let perMs = per.millis()
+  requirePositive("per", perMs)
+  if namespace.strip().len == 0:
+    raise newException(RateLimitConfigError, "namespace must not be empty")
+
 proc validateTokenBucketCost(burst, cost: int) =
   if cost <= 0:
     raise newException(RateLimitError, "cost must be positive")
   if cost > burst:
     raise newException(RateLimitError, "cost must not exceed burst capacity")
+
+proc validateTokenBucketKey(key: string) =
+  if key.len == 0:
+    raise newException(RateLimitError, "key must not be empty")
+  if key.strip().len == 0:
+    raise newException(RateLimitError, "key must not be blank")
+  for ch in key:
+    if ord(ch) < 32 or ord(ch) == 127:
+      raise newException(RateLimitError, "key must not contain control characters")
 
 proc runFixedWindowScript(
     storage: RedisRateLimitStorage;
@@ -308,6 +332,29 @@ proc initRedisTokenBucket*(
   validateTokenBucketConfig(rate, per, burst, key)
   RedisTokenBucket(storage: storage, key: key, rate: rate, per: per, burst: burst)
 
+proc initRedisKeyedTokenBucket*(
+    storage: RedisRateLimitStorage;
+    namespace: string;
+    rate: int;
+    per: Duration;
+    burst: int
+): RedisKeyedTokenBucket =
+  ## Creates a Redis-backed token bucket limiter keyed by each call.
+  ##
+  ## The namespace separates this limiter from other Redis-backed buckets.
+  ## Per-key state is stored in Redis using the existing token-bucket Lua
+  ## scripts, so consume operations remain atomic on a single Redis instance.
+  if storage.isNil:
+    raise newException(RateLimitConfigError, "storage must not be nil")
+  validateTokenBucketNamespace(rate, per, burst, namespace)
+  RedisKeyedTokenBucket(
+    storage: storage,
+    namespace: namespace,
+    rate: rate,
+    per: per,
+    burst: burst
+  )
+
 proc runTokenBucketScript(
     limiter: RedisTokenBucket;
     script: string;
@@ -338,4 +385,46 @@ proc clear*(limiter: RedisTokenBucket): bool =
   ## Removes the Redis key for this token bucket.
   parseBoolResult(
     limiter.storage.eval(ClearTokenBucketScript, @[limiter.storage.redisTokenBucketKey(limiter.key)], @[])
+  )
+
+proc redisKey(limiter: RedisKeyedTokenBucket; key: string): string =
+  limiter.namespace & ":" & key
+
+proc runTokenBucketScript(
+    limiter: RedisKeyedTokenBucket;
+    script: string;
+    key: string;
+    cost: int
+): RateLimitResult =
+  validateTokenBucketKey(key)
+  validateTokenBucketCost(limiter.burst, cost)
+  let perMs = limiter.per.millis()
+  requirePositive("per", perMs)
+  parseResult(limiter.storage.eval(
+    script,
+    @[limiter.storage.redisTokenBucketKey(limiter.redisKey(key))],
+    @[$limiter.rate, $perMs, $limiter.burst, $cost]
+  ))
+
+proc inspect*(limiter: RedisKeyedTokenBucket; key: string; cost = 1): RateLimitResult =
+  ## Checks one key's Redis token bucket capacity without consuming tokens.
+  limiter.runTokenBucketScript(InspectTokenBucketScript, key, cost)
+
+proc consume*(limiter: RedisKeyedTokenBucket; key: string; cost = 1): RateLimitResult =
+  ## Checks and consumes one key's Redis token bucket capacity atomically.
+  limiter.runTokenBucketScript(ConsumeTokenBucketScript, key, cost)
+
+proc allow*(limiter: RedisKeyedTokenBucket; key: string; cost = 1): bool =
+  ## Convenience boolean wrapper around keyed `consume`.
+  limiter.consume(key, cost).allowed
+
+proc clear*(limiter: RedisKeyedTokenBucket; key: string): bool =
+  ## Removes the Redis key for one keyed token bucket.
+  validateTokenBucketKey(key)
+  parseBoolResult(
+    limiter.storage.eval(
+      ClearTokenBucketScript,
+      @[limiter.storage.redisTokenBucketKey(limiter.redisKey(key))],
+      @[]
+    )
   )

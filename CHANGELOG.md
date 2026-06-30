@@ -5,6 +5,9 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+- Added Redis-backed keyed token bucket support for distributed per-key burst
+  control.
+
 ## 0.1.1
 
 - Bumped the core package version to `0.1.1`.

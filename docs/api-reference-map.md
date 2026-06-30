@@ -221,7 +221,8 @@ API docs, tests, and recipes rather than being duplicated here.
 
 ## Adapter packages
 
-- `flowbrigade_redis`: Redis fixed-window and token-bucket adapter primitives.
+- `flowbrigade_redis`: Redis fixed-window, token-bucket, and keyed
+  token-bucket adapter primitives.
 - `flowbrigade_ready`: bridge for the `ready` Redis client.
 - `flowbrigade_memcached`: experimental Memcached fixed-window adapter.
 - `flowbrigade_prologue`: experimental Prologue middleware bridge with

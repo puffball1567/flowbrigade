@@ -24,7 +24,8 @@ The core package already includes:
 - storage-backed fixed-window rate limiting
 - sync and async rate-limit storage adapter surfaces
 - in-memory rate-limit storage for tests and single-process tools
-- Redis adapter package and `ready` Redis client bridge package
+- Redis adapter package with fixed-window and token-bucket support
+- `ready` Redis client bridge package
 - experimental Memcached fixed-window adapter package
 - budget/quota ledger
 - throttle and debounce
@@ -48,13 +49,16 @@ The core package already includes:
   limiter registry operations, callback-backed stored fixed windows, metrics
   export helpers, and feature checks
 
+## Unreleased / v0.2 Candidate
+
+- Redis-backed keyed token bucket adapter support
+
 ## Next Candidates
 
 These are reasonable next areas if they stay small and well-tested:
 
 - C ABI smoke coverage for more direct handle combinations
 - optional leak-check workflow using Valgrind or sanitizers when available
-- distributed keyed token-bucket adapter support
 - richer policy/config examples for non-web workers and batch runtimes
 - more benchmarks around hot limiter paths and storage adapter overhead
 - deeper adapter documentation for Redis, Memcached, and third-party client

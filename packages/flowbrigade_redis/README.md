@@ -73,6 +73,23 @@ if not decision.allowed:
   echo "retry after: ", decision.retryAfter
 ```
 
+Use `initRedisKeyedTokenBucket` when the bucket should be selected per request,
+tenant, account, queue, or job class:
+
+```nim
+let bucket = initRedisKeyedTokenBucket(
+  storage = redisStorage,
+  namespace = "api",
+  rate = 10,
+  per = initDuration(seconds = 1),
+  burst = 20
+)
+
+let decision = bucket.consume("user:42")
+if not decision.allowed:
+  echo "retry after: ", decision.retryAfter
+```
+
 Example shape for a raw command client:
 
 ```nim

@@ -60,7 +60,7 @@ This document defines what is currently supported and what is experimental.
 
 | Package | Status | Notes |
 | --- | --- | --- |
-| `flowbrigade_redis` | Supported | Redis fixed-window and token-bucket adapter. |
+| `flowbrigade_redis` | Supported | Redis fixed-window, token-bucket, and keyed token-bucket adapter. |
 | `flowbrigade_ready` | Supported | Bridge for the `ready` Redis client. |
 | `flowbrigade_memcached` | Experimental | Fixed-window adapter contract. Fake and optional real-server tests. |
 

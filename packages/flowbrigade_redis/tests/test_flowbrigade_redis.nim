@@ -318,3 +318,75 @@ suite "Redis rate limit adapter":
 
     expect RateLimitError:
       discard limiter.consume(2)
+
+  test "Redis keyed token bucket tracks keys independently":
+    let redis = initFakeRedis()
+    let storage = initRedisRateLimitStorage(redis.eval())
+    let limiter = initRedisKeyedTokenBucket(
+      storage = storage,
+      namespace = "api",
+      rate = 1,
+      per = initDuration(seconds = 1),
+      burst = 1
+    )
+
+    check limiter.allow("alice")
+    check not limiter.allow("alice")
+    check limiter.allow("bob")
+    check not limiter.allow("bob")
+
+  test "Redis keyed token bucket inspect does not consume capacity":
+    let redis = initFakeRedis()
+    let storage = initRedisRateLimitStorage(redis.eval())
+    let limiter = initRedisKeyedTokenBucket(
+      storage = storage,
+      namespace = "api",
+      rate = 1,
+      per = initDuration(seconds = 1),
+      burst = 1
+    )
+
+    check limiter.inspect("alice").allowed
+    check limiter.inspect("alice").allowed
+    check limiter.allow("alice")
+    check not limiter.allow("alice")
+
+  test "Redis keyed token bucket clears one key":
+    let redis = initFakeRedis()
+    let storage = initRedisRateLimitStorage(redis.eval())
+    let limiter = initRedisKeyedTokenBucket(
+      storage = storage,
+      namespace = "api",
+      rate = 1,
+      per = initDuration(seconds = 1),
+      burst = 1
+    )
+
+    check limiter.allow("alice")
+    check not limiter.allow("alice")
+    check limiter.allow("bob")
+    check limiter.clear("alice")
+    check limiter.allow("alice")
+    check not limiter.allow("bob")
+    check not limiter.clear("missing")
+
+  test "Redis keyed token bucket rejects invalid configuration keys and costs":
+    let redis = initFakeRedis()
+    let storage = initRedisRateLimitStorage(redis.eval())
+
+    expect RateLimitConfigError:
+      discard initRedisKeyedTokenBucket(storage, " ", 1, initDuration(seconds = 1), 1)
+    expect RateLimitConfigError:
+      discard initRedisKeyedTokenBucket(storage, "api", 0, initDuration(seconds = 1), 1)
+
+    let limiter = initRedisKeyedTokenBucket(storage, "api", 1, initDuration(seconds = 1), 1)
+    expect RateLimitError:
+      discard limiter.consume("")
+    expect RateLimitError:
+      discard limiter.consume(" ")
+    expect RateLimitError:
+      discard limiter.consume("alice" & chr(10))
+    expect RateLimitError:
+      discard limiter.consume("alice", cost = 0)
+    expect RateLimitError:
+      discard limiter.consume("alice", cost = 2)
