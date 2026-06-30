@@ -70,7 +70,8 @@ if limiter.allow():
 - Use sync or async storage-backed fixed-window rate limiting
 - Use separate Redis, Memcached, and client bridge packages when distributed
   state is needed
-- Build the experimental C ABI layer for non-Nim bindings
+- Use the experimental C ABI directly from C/C++ or as the base for non-Nim
+  bindings
 
 ## When To Use What
 
@@ -524,8 +525,13 @@ discard downstreamTimeout
 
 ## Experimental C ABI
 
-FlowBrigade also exposes an experimental C ABI for small bindings in languages
-such as Zig, Odin, Rust, C, and C++.
+FlowBrigade also exposes an experimental C ABI. C and C++ callers can use this
+ABI directly, and other language bindings can build on the same header and
+shared library without reimplementing the core flow-control logic.
+
+The implementation is still marked experimental because the ABI may grow before
+1.0, but the current surface is broad and covered by Nim tests, C compilation
+checks, and a C smoke test in CI.
 
 The current ABI covers:
 
@@ -557,6 +563,37 @@ process. The ABI uses opaque handles, caller-owned buffers, fixed structs, and
 integer status codes; Nim exceptions do not cross the boundary. Use
 `fb_abi_version()` for compatibility checks and `fb_last_error()` for diagnostic
 text after a failed ABI call.
+
+Minimal C usage:
+
+```c
+#include "flowbrigade.h"
+
+int main(void) {
+  NimMain();
+
+  fb_token_bucket bucket = 0;
+  fb_rate_limit_result result;
+
+  if (fb_token_bucket_create(10, 1000000000LL, 20, &bucket) != FB_OK) {
+    return 1;
+  }
+  if (fb_token_bucket_consume(bucket, 1, &result) != FB_OK) {
+    fb_token_bucket_destroy(bucket);
+    return 1;
+  }
+
+  fb_token_bucket_destroy(bucket);
+  return result.allowed ? 0 : 2;
+}
+```
+
+Compile against a local build:
+
+```sh
+nimble cabi
+gcc -Iinclude app.c -L/tmp -lflowbrigade -Wl,-rpath,/tmp -o app
+```
 
 See [docs/c-abi.md](docs/c-abi.md) for details and
 [docs/spec.md](docs/spec.md) for the language-neutral behavior model.
