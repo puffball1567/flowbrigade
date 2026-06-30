@@ -5,6 +5,17 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+## 0.1.1
+
+- Bumped the core package version to `0.1.1`.
+- Expanded the experimental C ABI with keyed fixed-window handles, keyed
+  bulkhead handles, local limiter management helpers, feature checks, and an
+  ARC default build task.
+- Updated the roadmap to reflect the current shipped surface and remaining
+  focused candidates.
+
+## 0.1.0
+
 - Added duration parsing, formatting, and unit helpers.
 - Added fixed, linear, and exponential backoff policies.
 - Added jitter modes.
