@@ -55,6 +55,8 @@ The core package already includes:
 
 - GCRA and keyed GCRA in-process rate limiters
 - intellectual-property review notes for standards-described algorithms
+- Retry allowance controls for limiting retry storms per dependency, workflow,
+  tenant, or worker class
 
 ## Next Candidates
 

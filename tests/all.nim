@@ -9,6 +9,7 @@ import ./test_backoff_jitter
 
 import ./test_retry_sync
 import ./test_retry_async
+import ./test_retry_allowance
 
 import ./test_ratelimit_token_bucket
 import ./test_ratelimit_fixed_window

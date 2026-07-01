@@ -42,6 +42,7 @@ if limiter.allow():
 - Add jitter to avoid synchronized retries
 - Retry synchronous operations
 - Retry asynchronous operations
+- Bound retry volume with retry allowances to avoid retry storms
 - Fall back to secondary providers in a controlled order, sync or async
 - Limit repeated actions with token bucket, GCRA, and fixed window limiters
 - Limit actions per key with keyed fixed window and keyed GCRA limiters
@@ -81,6 +82,7 @@ if limiter.allow():
 | --- | --- |
 | Parse `30s` or `1h30m` from config | `parseDuration` |
 | Retry temporary failures | `retry` or `retryAsync` with `BackoffPolicy` |
+| Limit retry storms | `RetryAllowance` |
 | Try secondary providers after a failure | `fallback`, `fallbackAsync`, `tryInOrder`, or `tryInOrderAsync` |
 | Allow short bursts with steady refill | `TokenBucket` |
 | Smooth high-throughput request flow | `GcraLimiter` or `KeyedGcraLimiter` |
@@ -678,6 +680,6 @@ See [docs/support-matrix.md](docs/support-matrix.md) for supported areas.
 See [docs/api-stability.md](docs/api-stability.md) for compatibility policy.
 See [docs/local-services.md](docs/local-services.md) for local Redis and Memcached verification.
 See [docs/c-abi.md](docs/c-abi.md) for the experimental C ABI surface.
-See [docs/ip-notes.md](docs/ip-notes.md) for algorithm due-diligence notes.
+See [docs/ip-notes.md](docs/ip-notes.md) for algorithm and operational-pattern due-diligence notes.
 See [docs/release-checklist.md](docs/release-checklist.md) before publishing.
 See [SECURITY.md](SECURITY.md) for security scope and operational limits.
