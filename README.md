@@ -44,8 +44,8 @@ if limiter.allow():
 - Retry asynchronous operations
 - Bound retry volume with retry allowances to avoid retry storms
 - Fall back to secondary providers in a controlled order, sync or async
-- Limit repeated actions with token bucket and fixed window limiters
-- Limit actions per key with an in-memory keyed fixed window limiter
+- Limit repeated actions with token bucket, GCRA, and fixed window limiters
+- Limit actions per key with keyed fixed window and keyed GCRA limiters
 - Reset or inspect local limiter state for tests, admin actions, and recovery
 - Track per-key usage budgets and quotas over fixed periods
 - Throttle repeated actions
@@ -85,10 +85,11 @@ if limiter.allow():
 | Limit retry storms | `RetryAllowance` |
 | Try secondary providers after a failure | `fallback`, `fallbackAsync`, `tryInOrder`, or `tryInOrderAsync` |
 | Allow short bursts with steady refill | `TokenBucket` |
+| Smooth high-throughput request flow | `GcraLimiter` or `KeyedGcraLimiter` |
 | Enforce short-term request flow | `FixedWindow` or `StoredFixedWindow` |
 | Track usage quota or budget per tenant/API key | `BudgetLedger` |
 | Smooth boundary spikes | `SlidingWindow` |
-| Limit per user/API key/job | `KeyedFixedWindow` or stored fixed-window keys |
+| Limit per user/API key/job | `KeyedFixedWindow`, `KeyedGcraLimiter`, or stored fixed-window keys |
 | Clear local limiter state | `reset`, `clear`, or `resetAll` |
 | Combine global and per-key limits | `CompoundLimiter` |
 | Manage configured named limits | `LimiterRegistry` |

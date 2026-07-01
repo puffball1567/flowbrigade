@@ -55,7 +55,8 @@ not a substitute for application-level measurements.
 Before publishing a larger release, add repeatable benchmarks for:
 
 - duration parser throughput on invalid inputs
-- in-memory token bucket, fixed window, and sliding window `consume`
+- in-memory token bucket, GCRA, keyed GCRA, fixed window, and sliding window
+  `consume`
 - keyed limiter behavior near `maxKeys`
 - stored fixed-window in-memory adapter throughput
 - Redis fixed-window `consume` latency against a real server

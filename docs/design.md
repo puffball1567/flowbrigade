@@ -166,7 +166,42 @@ Examples:
 Kinds:
 
 - token bucket: 一定速度で token が補充され、処理するたびに token を消費する
+- GCRA: 理論上の次回到着時刻を管理し、高スループットの流量を滑らかにする
 - fixed window: 固定された時間枠ごとに回数を数える
+- sliding window: 直前の時間枠も重み付けして、窓の切り替わりで急に流量が増えるのを抑える
+- keyed limiter: user id, API token, job name などの key ごとに制限する
+- compound limiter: 複数の制限をまとめ、全部通る場合だけ許可する
+- stored fixed window: Redis などの外部 storage に状態を置ける固定窓 limiter
+
+`token bucket` is useful when short bursts should be allowed.
+`GCRA` is useful when high-throughput request flow should be smoothed with
+compact state.
+`fixed window` is simple and easy to understand.
+`sliding window` is useful when boundary spikes should be smoothed.
+
+All rate limiters expose:
+
+- `allow`: returns only `bool` and consumes capacity when allowed
+- `consume`: consumes capacity when allowed and returns `RateLimitResult`
+- `inspect`: returns `RateLimitResult` without consuming capacity
+
+`RateLimitResult` includes whether the action is allowed, the configured limit,
+remaining capacity, retry delay, and reset delay.
+
+HTTP-facing callers can derive `RateLimit-Limit`, `RateLimit-Remaining`,
+`RateLimit-Reset`, and `Retry-After` headers from `RateLimitResult`. This keeps
+framework integrations small and avoids tying the core package to one web stack.
+Callers that should pause instead of failing immediately can use `wait` or
+`waitAsync` with an application-provided sleep function.
+
+Keys should be built through `rateLimitKey` or `opaqueRateLimitKey` when they are
+derived from multiple parts or sensitive identifiers. `opaqueRateLimitKey` takes
+a caller-provided fingerprint function so applications can choose their own
+hashing or HMAC implementation.
+
+Distributed storage is designed on top of this result API. Redis is the first
+supported backend because it supports expiry and atomic updates well. Memcached
+support is intentionally narrower because its atomic update model is different.
 
 ### Budget / quota
 
@@ -253,39 +288,6 @@ line や Prometheus-style text に変換する薄い helper を提供します�
 This keeps the core dependency-free while making production adoption easier.
 Applications decide whether to write records to logs, metrics collectors,
 cloud services, or an in-house pipeline.
-- sliding window: 直前の時間枠も重み付けして、窓の切り替わりで急に流量が増えるのを抑える
-- keyed limiter: user id, API token, job name などの key ごとに制限する
-- compound limiter: 複数の制限をまとめ、全部通る場合だけ許可する
-- stored fixed window: Redis などの外部 storage に状態を置ける固定窓 limiter
-
-`token bucket` is useful when short bursts should be allowed.
-`fixed window` is simple and easy to understand.
-`sliding window` is useful when boundary spikes should be smoothed.
-
-All rate limiters expose:
-
-- `allow`: returns only `bool` and consumes capacity when allowed
-- `consume`: consumes capacity when allowed and returns `RateLimitResult`
-- `inspect`: returns `RateLimitResult` without consuming capacity
-
-`RateLimitResult` includes whether the action is allowed, the configured limit,
-remaining capacity, retry delay, and reset delay.
-
-HTTP-facing callers can derive `RateLimit-Limit`, `RateLimit-Remaining`,
-`RateLimit-Reset`, and `Retry-After` headers from `RateLimitResult`. This keeps
-framework integrations small and avoids tying the core package to one web stack.
-Callers that should pause instead of failing immediately can use `wait` or
-`waitAsync` with an application-provided sleep function.
-
-Keys should be built through `rateLimitKey` or `opaqueRateLimitKey` when they are
-derived from multiple parts or sensitive identifiers. `opaqueRateLimitKey` takes
-a caller-provided fingerprint function so applications can choose their own
-hashing or HMAC implementation.
-
-Distributed storage is designed on top of this result API. Redis is the first
-supported backend because it supports expiry and atomic updates well. Memcached
-is available as an experimental adapter for fixed-window limits, but it still
-must not force the core package to take an external dependency.
 
 `CompoundLimiter` stores rules as `inspect` and `consume` callbacks. This keeps
 it independent from concrete limiter types, so in-memory limiters and future

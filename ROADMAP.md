@@ -4,7 +4,7 @@ This roadmap is intentionally conservative. FlowBrigade should stay focused on
 flow-control building blocks for API clients, workers, batch jobs, CLIs,
 workflow runtimes, and web services.
 
-## Current: v0.2.0
+## Current: v0.3.0
 
 The core package already includes:
 
@@ -12,11 +12,13 @@ The core package already includes:
 - fixed, linear, and exponential backoff
 - jitter modes
 - sync and async retry
+- retry allowance controls for limiting retry storms per dependency, workflow,
+  tenant, or worker class
 - fallback and async fallback
 - retry, fallback, circuit-breaker, storage, budget, and control observer
   event shapes
-- token bucket, fixed window, sliding window, keyed fixed window, and compound
-  rate limiters
+- token bucket, GCRA, fixed window, sliding window, keyed fixed window, keyed
+  GCRA, and compound rate limiters
 - rate-limit result metadata, non-consuming inspection, wait helpers,
   reservations, HTTP headers, HTTP decisions, and typed denial exceptions
 - local limiter reset, configuration inspection, and state inspection helpers
@@ -50,11 +52,6 @@ The core package already includes:
   bulkhead handles, local limiter management helpers, callback retry/fallback,
   limiter registry operations, callback-backed stored fixed windows, metrics
   export helpers, and feature checks
-
-## Unreleased
-
-- Retry allowance controls for limiting retry storms per dependency, workflow,
-  tenant, or worker class
 
 ## Next Candidates
 
