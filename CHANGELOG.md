@@ -5,6 +5,8 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+## 0.3.0
+
 - Added in-process GCRA and keyed GCRA rate limiters with inspection, reset,
   keyed capacity guards, tests, and benchmark coverage.
 - Added intellectual-property review notes for standards-described algorithms
