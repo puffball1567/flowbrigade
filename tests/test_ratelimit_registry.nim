@@ -21,6 +21,9 @@ suite "limiter registry":
     check registry.allow("login", key = "user:1")
     check not registry.allow("login", key = "user:1")
     check registry.allow("login", key = "user:2")
+    check registry.clear("login", key = "user:1")
+    check registry.allow("login", key = "user:1")
+    check not registry.clear("login", key = "user:missing")
 
   test "registers token bucket limiters":
     var registry = initLimiterRegistry()

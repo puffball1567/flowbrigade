@@ -858,6 +858,13 @@ suite "C ABI":
     check allowed == 0
     check fb_limiter_registry_allow(registry, "login", 5, "user:2", 6, 1, addr allowed) == FB_OK
     check allowed == 1
+    var cleared: int32
+    check fb_limiter_registry_clear(registry, "login", 5, "user:1", 6, addr cleared) == FB_OK
+    check cleared == 1
+    check fb_limiter_registry_allow(registry, "login", 5, "user:1", 6, 1, addr allowed) == FB_OK
+    check allowed == 1
+    check fb_limiter_registry_clear(registry, "login", 5, "missing", 7, addr cleared) == FB_OK
+    check cleared == 0
 
     check fb_limiter_registry_add_token_bucket(
       registry,

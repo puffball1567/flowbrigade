@@ -150,7 +150,9 @@ proc addLimiter*(
       consume: proc(key: string; cost: int): RateLimitResult =
         validateRegistryKey(key)
         limiter.consume(key, cost),
-      clear: proc(key: string): bool = false
+      clear: proc(key: string): bool =
+        validateRegistryKey(key)
+        limiter.clear(key)
     ))
 
 proc addStoredFixedWindow*(
