@@ -51,6 +51,11 @@ The core package already includes:
   limiter registry operations, callback-backed stored fixed windows, metrics
   export helpers, and feature checks
 
+## Unreleased
+
+- Retry allowance controls for limiting retry storms per dependency, workflow,
+  tenant, or worker class
+
 ## Next Candidates
 
 These are reasonable next areas if they stay small and well-tested:
