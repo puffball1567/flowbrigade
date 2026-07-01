@@ -4,7 +4,7 @@ This roadmap is intentionally conservative. FlowBrigade should stay focused on
 flow-control building blocks for API clients, workers, batch jobs, CLIs,
 workflow runtimes, and web services.
 
-## Current: v0.3.0
+## Current: v0.4.0
 
 The core package already includes:
 
@@ -48,10 +48,11 @@ The core package already includes:
 - thread-safe wrappers for shared in-process policies and registries
 - compile-checked recipes and adoption documentation
 - local benchmark smoke tests and optional real Redis benchmark
-- experimental C ABI with ARC default build, keyed fixed-window handles, keyed
-  bulkhead handles, local limiter management helpers, callback retry/fallback,
-  limiter registry operations, callback-backed stored fixed windows, metrics
-  export helpers, and feature checks
+- experimental C ABI with ARC default build, token bucket, GCRA, keyed GCRA,
+  keyed fixed-window, bulkhead, keyed bulkhead, retry allowance, local limiter
+  management helpers, callback retry/fallback, limiter registry operations,
+  callback-backed stored fixed windows, metrics export helpers, and feature
+  checks
 
 ## Next Candidates
 

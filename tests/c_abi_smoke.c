@@ -100,12 +100,15 @@ static int32_t storage_clear(void* user_data, const char* key, size_t key_len, i
 int main(void) {
   int64_t nanos = 0;
   fb_token_bucket bucket = 0;
+  fb_gcra_limiter gcra = 0;
   fb_keyed_fixed_window keyed_window = 0;
+  fb_keyed_gcra_limiter keyed_gcra = 0;
   fb_backoff_policy backoff = 0;
   fb_bulkhead bulkhead = 0;
   fb_keyed_bulkhead keyed_bulkhead = 0;
   fb_timeout timeout = 0;
   fb_budget_ledger budget = 0;
+  fb_retry_allowance allowance = 0;
   fb_lock_store lock_store = 0;
   fb_lock_lease first_lease = 0;
   fb_lock_lease second_lease = 0;
@@ -120,6 +123,7 @@ int main(void) {
   fallback_state fallback = {{0, 0}};
   storage_state stored = {0};
   fb_rate_limit_result decision;
+  fb_retry_allowance_result allowance_decision;
   fb_bulkhead_result bulkhead_decision;
   fb_budget_result budget_decision;
   fb_lock_acquire_result lock_decision;
@@ -134,10 +138,10 @@ int main(void) {
 
   NimMain();
 
-  if (fb_abi_version() < 1) {
+  if (fb_abi_version() < 2) {
     return 11;
   }
-  if (strcmp(fb_abi_version_string(), "1") != 0) {
+  if (strcmp(fb_abi_version_string(), "2") != 0) {
     return 45;
   }
   if (fb_abi_supports("storage-callback", 16, &flag) != FB_OK || !flag) {
@@ -165,6 +169,15 @@ int main(void) {
 
   fb_token_bucket_destroy(bucket);
 
+  if (fb_gcra_create(2, 1000000000LL, 2, &gcra) != FB_OK) {
+    return 81;
+  }
+  if (fb_gcra_consume(gcra, 1, &decision) != FB_OK || !decision.allowed) {
+    fb_gcra_destroy(gcra);
+    return 82;
+  }
+  fb_gcra_destroy(gcra);
+
   if (fb_keyed_fixed_window_create(2, 60000000000LL, 4, &keyed_window) != FB_OK) {
     return 53;
   }
@@ -185,6 +198,15 @@ int main(void) {
     return 57;
   }
   fb_keyed_fixed_window_destroy(keyed_window);
+
+  if (fb_keyed_gcra_create(2, 1000000000LL, 2, 4, &keyed_gcra) != FB_OK) {
+    return 83;
+  }
+  if (fb_keyed_gcra_consume(keyed_gcra, "tenant-a", 8, 1, &decision) != FB_OK || !decision.allowed) {
+    fb_keyed_gcra_destroy(keyed_gcra);
+    return 84;
+  }
+  fb_keyed_gcra_destroy(keyed_gcra);
 
   if (fb_fixed_backoff_create(250000000LL, FB_NO_JITTER, &backoff) != FB_OK) {
     return 6;
@@ -259,6 +281,22 @@ int main(void) {
     return 18;
   }
   fb_budget_ledger_destroy(budget);
+
+  if (fb_retry_allowance_create(0.5, 60000000000LL, 1, 4, &allowance) != FB_OK) {
+    return 85;
+  }
+  if (fb_retry_allowance_record_original(allowance, "tenant-a", 8, 4, &allowance_decision) != FB_OK ||
+      !allowance_decision.allowed ||
+      allowance_decision.limit != 3) {
+    fb_retry_allowance_destroy(allowance);
+    return 86;
+  }
+  if (fb_retry_allowance_record_retry(allowance, "tenant-a", 8, 1, &allowance_decision) != FB_OK ||
+      !allowance_decision.allowed) {
+    fb_retry_allowance_destroy(allowance);
+    return 87;
+  }
+  fb_retry_allowance_destroy(allowance);
 
   if (fb_lock_store_create(&lock_store) != FB_OK) {
     return 19;

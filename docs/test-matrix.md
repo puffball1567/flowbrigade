@@ -599,14 +599,17 @@ make gaps visible before adding new features.
 | duration format | writes caller-owned buffers and reports required length |
 | backoff handles | fixed, linear, and exponential delay calculation |
 | token bucket handle | create, inspect, consume, denial metadata, reset, configuration/state inspection, destroy |
+| GCRA handle | create, inspect, consume, allow, denial metadata, reset, configuration/state inspection, destroy |
 | fixed window handle | create, inspect, consume, denial, reset, configuration/state inspection, destroy |
 | keyed fixed window handle | create, inspect, consume, clear, reset, reset all, active keys, configuration inspection, invalid keys, destroy |
+| keyed GCRA handle | create, inspect, consume, allow, clear, reset, reset all, active keys, configuration inspection, invalid keys, destroy |
 | sliding window handle | create, consume, denial, reset, configuration/state inspection, destroy |
 | circuit breaker handle | create, allow, record failure, state, destroy |
 | bulkhead handle | create, inspect, acquire, release, destroy |
 | keyed bulkhead handle | create, inspect, acquire, release, clear, active keys, invalid keys, destroy |
 | timeout and deadline handles | create, expired, elapsed/remaining, clamp, destroy |
 | budget ledger handle | create, inspect, consume, denial, refund, reset, reset all, destroy |
+| retry allowance handle | create, record original, inspect retry, record retry, allow retry, clear, reset, reset all, active keys, configuration inspection, invalid keys/costs, destroy |
 | lock store handle | create, acquire, conflict, inspect, refresh, release, release key, destroy |
 | throttle and debounce handles | create, allow/ready, reset/cancel, destroy |
 | retry callback ABI | success after retries, exhausted attempts, sleep callback failure, invalid input |

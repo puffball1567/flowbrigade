@@ -119,8 +119,8 @@ proc storageClear(userData: pointer; key: cstring; keyLen: csize_t; outCleared: 
 
 suite "C ABI":
   test "reports ABI version and last error":
-    check fb_abi_version() == 1
-    check $fb_abi_version_string() == "1"
+    check fb_abi_version() == 2
+    check $fb_abi_version_string() == "2"
     check fb_last_error() != nil
 
     var supported: int32
@@ -131,6 +131,12 @@ suite "C ABI":
     check fb_abi_supports("keyed-fixed-window", 18, addr supported) == FB_OK
     check supported == 1
     check fb_abi_supports("ratelimit-management", 20, addr supported) == FB_OK
+    check supported == 1
+    check fb_abi_supports("gcra", 4, addr supported) == FB_OK
+    check supported == 1
+    check fb_abi_supports("keyed-gcra", 10, addr supported) == FB_OK
+    check supported == 1
+    check fb_abi_supports("retry-allowance", 15, addr supported) == FB_OK
     check supported == 1
     check fb_abi_supports("unknown", 7, addr supported) == FB_OK
     check supported == 0
@@ -232,6 +238,43 @@ suite "C ABI":
     check value == 3
 
     fb_token_bucket_destroy(handle)
+
+  test "GCRA handle can inspect and consume":
+    var handle: pointer
+    check fb_gcra_create(2, initDuration(seconds = 1).inNanoseconds, 2, addr handle) == FB_OK
+    check not handle.isNil
+
+    var result: FbRateLimitResult
+    var value: int32
+    var periodNs: int64
+    check fb_gcra_configured_rate(handle, addr value) == FB_OK
+    check value == 2
+    check fb_gcra_configured_burst(handle, addr value) == FB_OK
+    check value == 2
+    check fb_gcra_configured_period(handle, addr periodNs) == FB_OK
+    check periodNs == initDuration(seconds = 1).inNanoseconds
+    check fb_gcra_configured_interval(handle, addr periodNs) == FB_OK
+    check periodNs == initDuration(milliseconds = 500).inNanoseconds
+    check fb_gcra_available_capacity(handle, addr value) == FB_OK
+    check value == 2
+
+    check fb_gcra_consume(handle, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check result.limit == 2
+    check result.remaining == 1
+    check fb_gcra_consume(handle, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_gcra_consume(handle, 1, addr result) == FB_OK
+    check result.allowed == 0
+    check result.retryAfterNs > 0
+
+    check fb_gcra_reset(handle) == FB_OK
+    check fb_gcra_allow(handle, 2, addr value) == FB_OK
+    check value == 1
+    check fb_gcra_allow(handle, 1, addr value) == FB_OK
+    check value == 0
+
+    fb_gcra_destroy(handle)
 
   test "backoff handles calculate delays":
     var handle: pointer
@@ -346,6 +389,59 @@ suite "C ABI":
     check fb_keyed_fixed_window_inspect(handle, nil, 0, 1, addr result) == FB_ERR_INVALID_ARGUMENT
 
     fb_keyed_fixed_window_destroy(handle)
+
+  test "keyed GCRA handle manages keyed state":
+    var handle: pointer
+    check fb_keyed_gcra_create(2, initDuration(seconds = 1).inNanoseconds, 2, 2, addr handle) == FB_OK
+    check not handle.isNil
+
+    var result: FbRateLimitResult
+    var value: int32
+    var periodNs: int64
+    check fb_keyed_gcra_configured_rate(handle, addr value) == FB_OK
+    check value == 2
+    check fb_keyed_gcra_configured_burst(handle, addr value) == FB_OK
+    check value == 2
+    check fb_keyed_gcra_configured_period(handle, addr periodNs) == FB_OK
+    check periodNs == initDuration(seconds = 1).inNanoseconds
+    check fb_keyed_gcra_configured_interval(handle, addr periodNs) == FB_OK
+    check periodNs == initDuration(milliseconds = 500).inNanoseconds
+    check fb_keyed_gcra_key_capacity(handle, addr value) == FB_OK
+    check value == 2
+
+    check fb_keyed_gcra_inspect(handle, "alice", 5, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_keyed_gcra_active_keys(handle, addr value) == FB_OK
+    check value == 0
+
+    check fb_keyed_gcra_consume(handle, "alice", 5, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_keyed_gcra_consume(handle, "alice", 5, 1, addr result) == FB_OK
+    check result.allowed == 1
+    check fb_keyed_gcra_consume(handle, "alice", 5, 1, addr result) == FB_OK
+    check result.allowed == 0
+    check fb_keyed_gcra_active_keys(handle, addr value) == FB_OK
+    check value == 1
+
+    check fb_keyed_gcra_clear(handle, "alice", 5, addr value) == FB_OK
+    check value == 1
+    check fb_keyed_gcra_clear(handle, "alice", 5, addr value) == FB_OK
+    check value == 0
+
+    check fb_keyed_gcra_consume(handle, "bob", 3, 1, addr result) == FB_OK
+    check fb_keyed_gcra_consume(handle, "carol", 5, 1, addr result) == FB_OK
+    check fb_keyed_gcra_consume(handle, "dave", 4, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_keyed_gcra_reset(handle, "bob", 3, addr value) == FB_OK
+    check value == 1
+    check fb_keyed_gcra_reset_all(handle, addr value) == FB_OK
+    check value == 1
+    check fb_keyed_gcra_active_keys(handle, addr value) == FB_OK
+    check value == 0
+
+    check fb_keyed_gcra_consume(handle, " ", 1, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_keyed_gcra_inspect(handle, nil, 0, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+
+    fb_keyed_gcra_destroy(handle)
 
   test "sliding window handle can inspect and consume":
     var handle: pointer
@@ -551,6 +647,68 @@ suite "C ABI":
 
     fb_budget_ledger_destroy(handle)
 
+  test "retry allowance handle tracks retry budget":
+    var handle: pointer
+    check fb_retry_allowance_create(0.5, initDuration(minutes = 1).inNanoseconds, 1, 2, addr handle) == FB_OK
+    check not handle.isNil
+
+    var result: FbRetryAllowanceResult
+    var value: int32
+    var ratio: cdouble
+    var periodNs: int64
+    var minimumRetries: int64
+    check fb_retry_allowance_configured_retry_ratio(handle, addr ratio) == FB_OK
+    check ratio == 0.5
+    check fb_retry_allowance_configured_minimum_retries(handle, addr minimumRetries) == FB_OK
+    check minimumRetries == 1
+    check fb_retry_allowance_configured_period(handle, addr periodNs) == FB_OK
+    check periodNs == initDuration(minutes = 1).inNanoseconds
+    check fb_retry_allowance_key_capacity(handle, addr value) == FB_OK
+    check value == 2
+
+    check fb_retry_allowance_record_original(handle, " tenant-a ", 10, 4, addr result) == FB_OK
+    check result.allowed == 1
+    check result.originals == 4
+    check result.limit == 3
+    check result.remaining == 3
+
+    check fb_retry_allowance_inspect_retry(handle, "tenant-a", 8, 2, addr result) == FB_OK
+    check result.allowed == 1
+    check result.retries == 2
+    check result.remaining == 1
+    check fb_retry_allowance_record_retry(handle, "tenant-a", 8, 2, addr result) == FB_OK
+    check result.allowed == 1
+    check result.retries == 2
+    check fb_retry_allowance_record_retry(handle, "tenant-a", 8, 2, addr result) == FB_OK
+    check result.allowed == 0
+    check result.retryAfterNs > 0
+
+    check fb_retry_allowance_allow_retry(handle, "tenant-a", 8, 1, addr value) == FB_OK
+    check value == 1
+    check fb_retry_allowance_allow_retry(handle, "tenant-a", 8, 1, addr value) == FB_OK
+    check value == 0
+    check fb_retry_allowance_active_keys(handle, addr value) == FB_OK
+    check value == 1
+
+    check fb_retry_allowance_clear(handle, "tenant-a", 8, addr value) == FB_OK
+    check value == 1
+    check fb_retry_allowance_clear(handle, "tenant-a", 8, addr value) == FB_OK
+    check value == 0
+
+    check fb_retry_allowance_record_original(handle, "tenant-b", 8, 1, addr result) == FB_OK
+    check fb_retry_allowance_record_original(handle, "tenant-c", 8, 1, addr result) == FB_OK
+    check fb_retry_allowance_record_original(handle, "tenant-d", 8, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_retry_allowance_reset(handle, "tenant-b", 8, addr value) == FB_OK
+    check value == 1
+    check fb_retry_allowance_reset_all(handle, addr value) == FB_OK
+    check value == 1
+    check fb_retry_allowance_prune_expired(handle) == FB_OK
+
+    check fb_retry_allowance_record_original(handle, " ", 1, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+    check fb_retry_allowance_record_original(handle, nil, 0, 1, addr result) == FB_ERR_INVALID_ARGUMENT
+
+    fb_retry_allowance_destroy(handle)
+
   test "lock store handle manages opaque leases":
     var store: pointer
     check fb_lock_store_create(addr store) == FB_OK
@@ -631,6 +789,8 @@ suite "C ABI":
     check ($fb_last_error()).len > 0
     check fb_fixed_window_create(0, initDuration(seconds = 1).inNanoseconds, nil) ==
       FB_ERR_INVALID_ARGUMENT
+    check fb_gcra_create(0, initDuration(seconds = 1).inNanoseconds, 1, nil) ==
+      FB_ERR_INVALID_ARGUMENT
     check fb_duration_parse(nil, 0, nil) == FB_ERR_INVALID_ARGUMENT
     check fb_backoff_delay_for(nil, 1, nil) == FB_ERR_INVALID_ARGUMENT
     check fb_bulkhead_create(0, nil) == FB_ERR_INVALID_ARGUMENT
@@ -639,6 +799,8 @@ suite "C ABI":
     check fb_budget_ledger_create(0, initDuration(minutes = 1).inNanoseconds, nil) ==
       FB_ERR_INVALID_ARGUMENT
     check fb_budget_consume(nil, "tenant", 6, 1, addr budgetResult) == FB_ERR_INVALID_ARGUMENT
+    check fb_retry_allowance_create(1.1, initDuration(minutes = 1).inNanoseconds, 0, 1, nil) ==
+      FB_ERR_INVALID_ARGUMENT
 
     var budgetHandle: pointer
     check fb_budget_ledger_create(10, initDuration(minutes = 1).inNanoseconds, addr budgetHandle) == FB_OK
@@ -647,6 +809,20 @@ suite "C ABI":
     check fb_budget_consume(budgetHandle, "tenant", 6, 0, addr budgetResult) == FB_ERR_INVALID_ARGUMENT
     check fb_budget_consume(budgetHandle, "tenant", 6, 1, nil) == FB_ERR_INVALID_ARGUMENT
     fb_budget_ledger_destroy(budgetHandle)
+
+    var retryAllowance: pointer
+    var retryAllowanceResult: FbRetryAllowanceResult
+    check fb_retry_allowance_create(0.2, initDuration(minutes = 1).inNanoseconds, 0, 1, addr retryAllowance) == FB_OK
+    check fb_retry_allowance_record_retry(nil, "tenant", 6, 1, addr retryAllowanceResult) == FB_ERR_INVALID_ARGUMENT
+    check fb_retry_allowance_record_retry(retryAllowance, nil, 0, 1, addr retryAllowanceResult) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_retry_allowance_record_retry(retryAllowance, " ", 1, 1, addr retryAllowanceResult) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_retry_allowance_record_retry(retryAllowance, "tenant", 6, 0, addr retryAllowanceResult) ==
+      FB_ERR_INVALID_ARGUMENT
+    check fb_retry_allowance_record_retry(retryAllowance, "tenant", 6, 1, nil) ==
+      FB_ERR_INVALID_ARGUMENT
+    fb_retry_allowance_destroy(retryAllowance)
 
     check fb_lock_store_create(nil) == FB_ERR_INVALID_ARGUMENT
     check fb_lock_acquire(nil, "job", 3, initDuration(minutes = 1).inNanoseconds, nil, addr lockResult) ==

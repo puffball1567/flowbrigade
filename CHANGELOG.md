@@ -5,6 +5,15 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+## 0.4.0
+
+- Expanded the experimental C ABI to expose GCRA, keyed GCRA, and
+  `RetryAllowance` handles with configuration inspection, state operations, and
+  invalid-argument coverage.
+- Bumped the C ABI version to `2` for bindings that want to detect the expanded
+  public ABI surface.
+- Bumped the core package version to `0.4.0`.
+
 ## 0.3.0
 
 - Added in-process GCRA and keyed GCRA rate limiters with inspection, reset,

@@ -10,7 +10,7 @@ int main(void) {
 
   NimMain();
 
-  if (fb_abi_version() < 1) {
+  if (fb_abi_version() < 2) {
     fprintf(stderr, "unsupported FlowBrigade C ABI\n");
     return 1;
   }

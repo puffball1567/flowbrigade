@@ -10,12 +10,13 @@ import flowbrigade/locks
 import flowbrigade/metrics
 import flowbrigade/observability
 import flowbrigade/ratelimit
+import flowbrigade/retry_allowance
 import flowbrigade/throttle
 import flowbrigade/timeout
 
 const
-  FB_ABI_VERSION* = 1.cint
-  FB_ABI_VERSION_STRING* = "1"
+  FB_ABI_VERSION* = 2.cint
+  FB_ABI_VERSION_STRING* = "2"
 
   FB_OK* = 0.cint
   FB_ERR_INVALID_ARGUMENT* = 1.cint
@@ -49,6 +50,16 @@ type
     allowed*: int32
     limit*: int64
     used*: int64
+    remaining*: int64
+    cost*: int64
+    retryAfterNs*: int64
+    resetAfterNs*: int64
+
+  FbRetryAllowanceResult* {.bycopy.} = object
+    allowed*: int32
+    limit*: int64
+    originals*: int64
+    retries*: int64
     remaining*: int64
     cost*: int64
     retryAfterNs*: int64
@@ -118,6 +129,12 @@ type
   TokenBucketHandle = ref object
     limiter: TokenBucket
 
+  GcraLimiterHandle = ref object
+    limiter: GcraLimiter
+
+  KeyedGcraLimiterHandle = ref object
+    limiter: KeyedGcraLimiter[string]
+
   FixedWindowHandle = ref object
     limiter: FixedWindow
 
@@ -144,6 +161,9 @@ type
 
   BudgetLedgerHandle = ref object
     ledger: BudgetLedger
+
+  RetryAllowanceHandle = ref object
+    allowance: RetryAllowance
 
   LockStoreHandle = ref object
     store: LockStore
@@ -256,6 +276,21 @@ proc writeBudgetResult(outResult: ptr FbBudgetResult; decision: BudgetResult): c
   )
   FB_OK
 
+proc writeRetryAllowanceResult(outResult: ptr FbRetryAllowanceResult; decision: RetryAllowanceResult): cint =
+  if outResult.isNil:
+    return abiInvalid("out_result must not be nil")
+  outResult[] = FbRetryAllowanceResult(
+    allowed: (if decision.allowed: 1'i32 else: 0'i32),
+    limit: decision.limit,
+    originals: decision.originals,
+    retries: decision.retries,
+    remaining: decision.remaining,
+    cost: decision.cost,
+    retryAfterNs: decision.retryAfter.inNanoseconds,
+    resetAfterNs: decision.resetAfter.inNanoseconds
+  )
+  FB_OK
+
 proc writeLockAcquireResult(outResult: ptr FbLockAcquireResult; decision: LockAcquireResult): cint =
   if outResult.isNil:
     return abiInvalid("out_result must not be nil")
@@ -332,7 +367,10 @@ proc fb_abi_supports*(
       "metrics",
       "ratelimit-management",
       "keyed-fixed-window",
-      "keyed-bulkhead"
+      "keyed-bulkhead",
+      "gcra",
+      "keyed-gcra",
+      "retry-allowance"
     ]: 1'i32 else: 0'i32)
     FB_OK
 
@@ -587,6 +625,123 @@ proc fb_token_bucket_available_tokens*(
     outTokens[] = int32(state.limiter.availableTokens())
     FB_OK
 
+proc fb_gcra_create*(
+    rate: int32;
+    perNs: int64;
+    burst: int32;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = GcraLimiterHandle(
+      limiter: initGcraLimiter(int(rate), durationFromNanos(perNs), int(burst))
+    )
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_gcra_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[GcraLimiterHandle](handle))
+
+proc fb_gcra_inspect*(
+    handle: pointer;
+    cost: int32;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    let state = cast[GcraLimiterHandle](handle)
+    writeRateLimitResult(outResult, state.limiter.inspect(int(cost)))
+
+proc fb_gcra_consume*(
+    handle: pointer;
+    cost: int32;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[GcraLimiterHandle](handle)
+    writeRateLimitResult(outResult, state.limiter.consume(int(cost)))
+
+proc fb_gcra_allow*(
+    handle: pointer;
+    cost: int32;
+    outAllowed: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outAllowed.isNil:
+      return abiInvalid("handle and out_allowed must not be nil")
+    var state = cast[GcraLimiterHandle](handle)
+    outAllowed[] = (if state.limiter.allow(int(cost)): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_gcra_reset*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[GcraLimiterHandle](handle)
+    state.limiter.reset()
+    FB_OK
+
+proc fb_gcra_configured_rate*(
+    handle: pointer;
+    outRate: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outRate.isNil:
+      return abiInvalid("handle and out_rate must not be nil")
+    let state = cast[GcraLimiterHandle](handle)
+    outRate[] = int32(state.limiter.configuredRate())
+    FB_OK
+
+proc fb_gcra_configured_period*(
+    handle: pointer;
+    outPeriodNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outPeriodNs.isNil:
+      return abiInvalid("handle and out_period_ns must not be nil")
+    let state = cast[GcraLimiterHandle](handle)
+    outPeriodNs[] = state.limiter.configuredPeriod().inNanoseconds
+    FB_OK
+
+proc fb_gcra_configured_burst*(
+    handle: pointer;
+    outBurst: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outBurst.isNil:
+      return abiInvalid("handle and out_burst must not be nil")
+    let state = cast[GcraLimiterHandle](handle)
+    outBurst[] = int32(state.limiter.configuredBurst())
+    FB_OK
+
+proc fb_gcra_configured_interval*(
+    handle: pointer;
+    outIntervalNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outIntervalNs.isNil:
+      return abiInvalid("handle and out_interval_ns must not be nil")
+    let state = cast[GcraLimiterHandle](handle)
+    outIntervalNs[] = state.limiter.configuredInterval().inNanoseconds
+    FB_OK
+
+proc fb_gcra_available_capacity*(
+    handle: pointer;
+    outCapacity: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCapacity.isNil:
+      return abiInvalid("handle and out_capacity must not be nil")
+    let state = cast[GcraLimiterHandle](handle)
+    outCapacity[] = int32(state.limiter.availableCapacity())
+    FB_OK
+
 proc fb_fixed_window_create*(
     limit: int32;
     perNs: int64;
@@ -801,6 +956,188 @@ proc fb_keyed_fixed_window_key_capacity*(
     if handle.isNil or outCapacity.isNil:
       return abiInvalid("handle and out_capacity must not be nil")
     let state = cast[KeyedFixedWindowHandle](handle)
+    outCapacity[] = int32(state.limiter.keyCapacity())
+    FB_OK
+
+proc fb_keyed_gcra_create*(
+    rate: int32;
+    perNs: int64;
+    burst: int32;
+    maxKeys: int32;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = KeyedGcraLimiterHandle(
+      limiter: initKeyedGcraLimiter[string](
+        rate = int(rate),
+        per = durationFromNanos(perNs),
+        burst = int(burst),
+        maxKeys = int(maxKeys)
+      )
+    )
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_keyed_gcra_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[KeyedGcraLimiterHandle](handle))
+
+proc fb_keyed_gcra_inspect*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int32;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[KeyedGcraLimiterHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeRateLimitResult(outResult, state.limiter.inspect(copiedKey, int(cost)))
+
+proc fb_keyed_gcra_consume*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int32;
+    outResult: ptr FbRateLimitResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[KeyedGcraLimiterHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeRateLimitResult(outResult, state.limiter.consume(copiedKey, int(cost)))
+
+proc fb_keyed_gcra_allow*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int32;
+    outAllowed: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outAllowed.isNil:
+      return abiInvalid("handle and out_allowed must not be nil")
+    var state = cast[KeyedGcraLimiterHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outAllowed[] = (if state.limiter.allow(copiedKey, int(cost)): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_keyed_gcra_prune_idle*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[KeyedGcraLimiterHandle](handle)
+    state.limiter.pruneIdle()
+    FB_OK
+
+proc fb_keyed_gcra_active_keys*(
+    handle: pointer;
+    outCount: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCount.isNil:
+      return abiInvalid("handle and out_count must not be nil")
+    var state = cast[KeyedGcraLimiterHandle](handle)
+    outCount[] = int32(state.limiter.activeKeys())
+    FB_OK
+
+proc fb_keyed_gcra_clear*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outCleared: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCleared.isNil:
+      return abiInvalid("handle and out_cleared must not be nil")
+    var state = cast[KeyedGcraLimiterHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outCleared[] = (if state.limiter.clear(copiedKey): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_keyed_gcra_reset*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outReset: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outReset.isNil:
+      return abiInvalid("handle and out_reset must not be nil")
+    var state = cast[KeyedGcraLimiterHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outReset[] = (if state.limiter.reset(copiedKey): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_keyed_gcra_reset_all*(
+    handle: pointer;
+    outRemoved: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outRemoved.isNil:
+      return abiInvalid("handle and out_removed must not be nil")
+    var state = cast[KeyedGcraLimiterHandle](handle)
+    outRemoved[] = int32(state.limiter.resetAll())
+    FB_OK
+
+proc fb_keyed_gcra_configured_rate*(
+    handle: pointer;
+    outRate: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outRate.isNil:
+      return abiInvalid("handle and out_rate must not be nil")
+    let state = cast[KeyedGcraLimiterHandle](handle)
+    outRate[] = int32(state.limiter.configuredRate())
+    FB_OK
+
+proc fb_keyed_gcra_configured_period*(
+    handle: pointer;
+    outPeriodNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outPeriodNs.isNil:
+      return abiInvalid("handle and out_period_ns must not be nil")
+    let state = cast[KeyedGcraLimiterHandle](handle)
+    outPeriodNs[] = state.limiter.configuredPeriod().inNanoseconds
+    FB_OK
+
+proc fb_keyed_gcra_configured_burst*(
+    handle: pointer;
+    outBurst: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outBurst.isNil:
+      return abiInvalid("handle and out_burst must not be nil")
+    let state = cast[KeyedGcraLimiterHandle](handle)
+    outBurst[] = int32(state.limiter.configuredBurst())
+    FB_OK
+
+proc fb_keyed_gcra_configured_interval*(
+    handle: pointer;
+    outIntervalNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outIntervalNs.isNil:
+      return abiInvalid("handle and out_interval_ns must not be nil")
+    let state = cast[KeyedGcraLimiterHandle](handle)
+    outIntervalNs[] = state.limiter.configuredInterval().inNanoseconds
+    FB_OK
+
+proc fb_keyed_gcra_key_capacity*(
+    handle: pointer;
+    outCapacity: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCapacity.isNil:
+      return abiInvalid("handle and out_capacity must not be nil")
+    let state = cast[KeyedGcraLimiterHandle](handle)
     outCapacity[] = int32(state.limiter.keyCapacity())
     FB_OK
 
@@ -1252,6 +1589,191 @@ proc fb_budget_reset_all*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
       return abiInvalid("handle must not be nil")
     var state = cast[BudgetLedgerHandle](handle)
     state.ledger.resetAll()
+    FB_OK
+
+proc fb_retry_allowance_create*(
+    retryRatio: cdouble;
+    perNs: int64;
+    minimumRetries: int64;
+    maxKeys: int32;
+    outHandle: ptr pointer
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if outHandle.isNil:
+      return abiInvalid("out_handle must not be nil")
+    let handle = RetryAllowanceHandle(
+      allowance: initRetryAllowance(
+        retryRatio = float(retryRatio),
+        per = durationFromNanos(perNs),
+        minimumRetries = minimumRetries,
+        maxKeys = int(maxKeys)
+      )
+    )
+    GC_ref(handle)
+    outHandle[] = cast[pointer](handle)
+    FB_OK
+
+proc fb_retry_allowance_destroy*(handle: pointer) {.cdecl, exportc, dynlib.} =
+  if not handle.isNil:
+    GC_unref(cast[RetryAllowanceHandle](handle))
+
+proc fb_retry_allowance_record_original*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    amount: int64;
+    outResult: ptr FbRetryAllowanceResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[RetryAllowanceHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeRetryAllowanceResult(outResult, state.allowance.recordOriginal(copiedKey, amount))
+
+proc fb_retry_allowance_inspect_retry*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int64;
+    outResult: ptr FbRetryAllowanceResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[RetryAllowanceHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeRetryAllowanceResult(outResult, state.allowance.inspectRetry(copiedKey, cost))
+
+proc fb_retry_allowance_record_retry*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int64;
+    outResult: ptr FbRetryAllowanceResult
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[RetryAllowanceHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    writeRetryAllowanceResult(outResult, state.allowance.recordRetry(copiedKey, cost))
+
+proc fb_retry_allowance_allow_retry*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    cost: int64;
+    outAllowed: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outAllowed.isNil:
+      return abiInvalid("handle and out_allowed must not be nil")
+    var state = cast[RetryAllowanceHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outAllowed[] = (if state.allowance.allowRetry(copiedKey, cost): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_retry_allowance_clear*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outCleared: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCleared.isNil:
+      return abiInvalid("handle and out_cleared must not be nil")
+    var state = cast[RetryAllowanceHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outCleared[] = (if state.allowance.clear(copiedKey): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_retry_allowance_reset*(
+    handle: pointer;
+    key: cstring;
+    keyLen: csize_t;
+    outReset: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outReset.isNil:
+      return abiInvalid("handle and out_reset must not be nil")
+    var state = cast[RetryAllowanceHandle](handle)
+    let copiedKey = copyRequiredInput(key, keyLen, "key")
+    outReset[] = (if state.allowance.reset(copiedKey): 1'i32 else: 0'i32)
+    FB_OK
+
+proc fb_retry_allowance_reset_all*(
+    handle: pointer;
+    outRemoved: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outRemoved.isNil:
+      return abiInvalid("handle and out_removed must not be nil")
+    var state = cast[RetryAllowanceHandle](handle)
+    outRemoved[] = int32(state.allowance.resetAll())
+    FB_OK
+
+proc fb_retry_allowance_prune_expired*(handle: pointer): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil:
+      return abiInvalid("handle must not be nil")
+    var state = cast[RetryAllowanceHandle](handle)
+    state.allowance.pruneExpired()
+    FB_OK
+
+proc fb_retry_allowance_active_keys*(
+    handle: pointer;
+    outCount: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCount.isNil:
+      return abiInvalid("handle and out_count must not be nil")
+    var state = cast[RetryAllowanceHandle](handle)
+    outCount[] = int32(state.allowance.activeKeys())
+    FB_OK
+
+proc fb_retry_allowance_configured_retry_ratio*(
+    handle: pointer;
+    outRatio: ptr cdouble
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outRatio.isNil:
+      return abiInvalid("handle and out_ratio must not be nil")
+    let state = cast[RetryAllowanceHandle](handle)
+    outRatio[] = cdouble(state.allowance.configuredRetryRatio())
+    FB_OK
+
+proc fb_retry_allowance_configured_minimum_retries*(
+    handle: pointer;
+    outMinimumRetries: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outMinimumRetries.isNil:
+      return abiInvalid("handle and out_minimum_retries must not be nil")
+    let state = cast[RetryAllowanceHandle](handle)
+    outMinimumRetries[] = state.allowance.configuredMinimumRetries()
+    FB_OK
+
+proc fb_retry_allowance_configured_period*(
+    handle: pointer;
+    outPeriodNs: ptr int64
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outPeriodNs.isNil:
+      return abiInvalid("handle and out_period_ns must not be nil")
+    let state = cast[RetryAllowanceHandle](handle)
+    outPeriodNs[] = state.allowance.configuredPeriod().inNanoseconds
+    FB_OK
+
+proc fb_retry_allowance_key_capacity*(
+    handle: pointer;
+    outCapacity: ptr int32
+): cint {.cdecl, exportc, dynlib.} =
+  catchAbiErrors:
+    if handle.isNil or outCapacity.isNil:
+      return abiInvalid("handle and out_capacity must not be nil")
+    let state = cast[RetryAllowanceHandle](handle)
+    outCapacity[] = int32(state.allowance.keyCapacity())
     FB_OK
 
 proc fb_lock_store_create*(outHandle: ptr pointer): cint {.cdecl, exportc, dynlib.} =

@@ -8,14 +8,17 @@ The first ABI surface is intentionally narrow:
 - duration parsing and formatting
 - fixed, linear, and exponential backoff delay calculation
 - token bucket handles
+- GCRA handles
 - fixed window handles
 - keyed fixed window handles
+- keyed GCRA handles
 - sliding window handles
 - circuit breaker handles
 - bulkhead handles
 - keyed bulkhead handles
 - timeout and deadline handles
 - budget ledger handles
+- retry allowance handles
 - in-memory lock store and lease handles
 - throttle and debounce handles
 - retry execution with C callbacks
@@ -115,7 +118,8 @@ treat it as thread-local state.
 `fb_abi_version()` and `fb_abi_version_string()` return the ABI version.
 Bindings can call `fb_abi_supports(feature, len, &out)` before assuming newer
 groups such as `storage-callback`, `metrics`, `keyed-fixed-window`,
-`keyed-bulkhead`, or `ratelimit-management` exist.
+`keyed-bulkhead`, `gcra`, `keyed-gcra`, `retry-allowance`, or
+`ratelimit-management` exist.
 
 ## Thread Safety
 
