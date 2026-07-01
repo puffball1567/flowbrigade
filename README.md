@@ -547,12 +547,13 @@ The current ABI covers:
 
 - duration parsing and formatting
 - fixed, linear, and exponential backoff delay calculation
-- token bucket, fixed window, keyed fixed window, and sliding window rate
-  limiters, including local reset and inspection helpers
+- token bucket, GCRA, fixed window, keyed fixed window, keyed GCRA, and sliding
+  window rate limiters, including local reset and inspection helpers
 - circuit breaker state transitions
 - bulkhead and keyed bulkhead permit tracking
 - timeout/deadline checks and remaining-time helpers
 - budget ledger quota checks, refunds, and resets
+- retry allowance checks for limiting retry storms
 - in-memory lock stores with opaque lease handles
 - throttle and debounce state handles
 - retry execution with C operation and sleep callbacks

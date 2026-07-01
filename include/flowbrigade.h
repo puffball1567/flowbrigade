@@ -53,6 +53,17 @@ typedef struct fb_budget_result {
   int64_t reset_after_ns;
 } fb_budget_result;
 
+typedef struct fb_retry_allowance_result {
+  int32_t allowed;
+  int64_t limit;
+  int64_t originals;
+  int64_t retries;
+  int64_t remaining;
+  int64_t cost;
+  int64_t retry_after_ns;
+  int64_t reset_after_ns;
+} fb_retry_allowance_result;
+
 typedef struct fb_lock_acquire_result {
   int32_t acquired;
   int64_t ttl_ns;
@@ -118,8 +129,10 @@ typedef struct fb_rate_limit_storage {
 
 typedef void* fb_backoff_policy;
 typedef void* fb_token_bucket;
+typedef void* fb_gcra_limiter;
 typedef void* fb_fixed_window;
 typedef void* fb_keyed_fixed_window;
+typedef void* fb_keyed_gcra_limiter;
 typedef void* fb_sliding_window;
 typedef void* fb_circuit_breaker;
 typedef void* fb_bulkhead;
@@ -127,6 +140,7 @@ typedef void* fb_keyed_bulkhead;
 typedef void* fb_timeout;
 typedef void* fb_deadline;
 typedef void* fb_budget_ledger;
+typedef void* fb_retry_allowance;
 typedef void* fb_lock_store;
 typedef void* fb_lock_lease;
 typedef void* fb_throttle;
@@ -163,6 +177,18 @@ int32_t fb_token_bucket_configured_period(fb_token_bucket handle, int64_t* out_p
 int32_t fb_token_bucket_configured_burst(fb_token_bucket handle, int32_t* out_burst);
 int32_t fb_token_bucket_available_tokens(fb_token_bucket handle, int32_t* out_tokens);
 
+int32_t fb_gcra_create(int32_t rate, int64_t per_ns, int32_t burst, fb_gcra_limiter* out_handle);
+void fb_gcra_destroy(fb_gcra_limiter handle);
+int32_t fb_gcra_inspect(fb_gcra_limiter handle, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_gcra_consume(fb_gcra_limiter handle, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_gcra_allow(fb_gcra_limiter handle, int32_t cost, int32_t* out_allowed);
+int32_t fb_gcra_reset(fb_gcra_limiter handle);
+int32_t fb_gcra_configured_rate(fb_gcra_limiter handle, int32_t* out_rate);
+int32_t fb_gcra_configured_period(fb_gcra_limiter handle, int64_t* out_period_ns);
+int32_t fb_gcra_configured_burst(fb_gcra_limiter handle, int32_t* out_burst);
+int32_t fb_gcra_configured_interval(fb_gcra_limiter handle, int64_t* out_interval_ns);
+int32_t fb_gcra_available_capacity(fb_gcra_limiter handle, int32_t* out_capacity);
+
 int32_t fb_fixed_window_create(int32_t limit, int64_t per_ns, fb_fixed_window* out_handle);
 void fb_fixed_window_destroy(fb_fixed_window handle);
 int32_t fb_fixed_window_inspect(fb_fixed_window handle, int32_t cost, fb_rate_limit_result* out_result);
@@ -183,6 +209,22 @@ int32_t fb_keyed_fixed_window_active_keys(fb_keyed_fixed_window handle, int32_t*
 int32_t fb_keyed_fixed_window_configured_limit(fb_keyed_fixed_window handle, int32_t* out_limit);
 int32_t fb_keyed_fixed_window_configured_period(fb_keyed_fixed_window handle, int64_t* out_period_ns);
 int32_t fb_keyed_fixed_window_key_capacity(fb_keyed_fixed_window handle, int32_t* out_capacity);
+
+int32_t fb_keyed_gcra_create(int32_t rate, int64_t per_ns, int32_t burst, int32_t max_keys, fb_keyed_gcra_limiter* out_handle);
+void fb_keyed_gcra_destroy(fb_keyed_gcra_limiter handle);
+int32_t fb_keyed_gcra_inspect(fb_keyed_gcra_limiter handle, const char* key, size_t key_len, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_keyed_gcra_consume(fb_keyed_gcra_limiter handle, const char* key, size_t key_len, int32_t cost, fb_rate_limit_result* out_result);
+int32_t fb_keyed_gcra_allow(fb_keyed_gcra_limiter handle, const char* key, size_t key_len, int32_t cost, int32_t* out_allowed);
+int32_t fb_keyed_gcra_prune_idle(fb_keyed_gcra_limiter handle);
+int32_t fb_keyed_gcra_active_keys(fb_keyed_gcra_limiter handle, int32_t* out_count);
+int32_t fb_keyed_gcra_clear(fb_keyed_gcra_limiter handle, const char* key, size_t key_len, int32_t* out_cleared);
+int32_t fb_keyed_gcra_reset(fb_keyed_gcra_limiter handle, const char* key, size_t key_len, int32_t* out_reset);
+int32_t fb_keyed_gcra_reset_all(fb_keyed_gcra_limiter handle, int32_t* out_removed);
+int32_t fb_keyed_gcra_configured_rate(fb_keyed_gcra_limiter handle, int32_t* out_rate);
+int32_t fb_keyed_gcra_configured_period(fb_keyed_gcra_limiter handle, int64_t* out_period_ns);
+int32_t fb_keyed_gcra_configured_burst(fb_keyed_gcra_limiter handle, int32_t* out_burst);
+int32_t fb_keyed_gcra_configured_interval(fb_keyed_gcra_limiter handle, int64_t* out_interval_ns);
+int32_t fb_keyed_gcra_key_capacity(fb_keyed_gcra_limiter handle, int32_t* out_capacity);
 
 int32_t fb_sliding_window_create(int32_t limit, int64_t per_ns, fb_sliding_window* out_handle);
 void fb_sliding_window_destroy(fb_sliding_window handle);
@@ -233,6 +275,22 @@ int32_t fb_budget_consume(fb_budget_ledger handle, const char* key, size_t key_l
 int32_t fb_budget_refund(fb_budget_ledger handle, const char* key, size_t key_len, int64_t amount, fb_budget_result* out_result);
 int32_t fb_budget_reset(fb_budget_ledger handle, const char* key, size_t key_len, fb_budget_result* out_result);
 int32_t fb_budget_reset_all(fb_budget_ledger handle);
+
+int32_t fb_retry_allowance_create(double retry_ratio, int64_t per_ns, int64_t minimum_retries, int32_t max_keys, fb_retry_allowance* out_handle);
+void fb_retry_allowance_destroy(fb_retry_allowance handle);
+int32_t fb_retry_allowance_record_original(fb_retry_allowance handle, const char* key, size_t key_len, int64_t amount, fb_retry_allowance_result* out_result);
+int32_t fb_retry_allowance_inspect_retry(fb_retry_allowance handle, const char* key, size_t key_len, int64_t cost, fb_retry_allowance_result* out_result);
+int32_t fb_retry_allowance_record_retry(fb_retry_allowance handle, const char* key, size_t key_len, int64_t cost, fb_retry_allowance_result* out_result);
+int32_t fb_retry_allowance_allow_retry(fb_retry_allowance handle, const char* key, size_t key_len, int64_t cost, int32_t* out_allowed);
+int32_t fb_retry_allowance_clear(fb_retry_allowance handle, const char* key, size_t key_len, int32_t* out_cleared);
+int32_t fb_retry_allowance_reset(fb_retry_allowance handle, const char* key, size_t key_len, int32_t* out_reset);
+int32_t fb_retry_allowance_reset_all(fb_retry_allowance handle, int32_t* out_removed);
+int32_t fb_retry_allowance_prune_expired(fb_retry_allowance handle);
+int32_t fb_retry_allowance_active_keys(fb_retry_allowance handle, int32_t* out_count);
+int32_t fb_retry_allowance_configured_retry_ratio(fb_retry_allowance handle, double* out_ratio);
+int32_t fb_retry_allowance_configured_minimum_retries(fb_retry_allowance handle, int64_t* out_minimum_retries);
+int32_t fb_retry_allowance_configured_period(fb_retry_allowance handle, int64_t* out_period_ns);
+int32_t fb_retry_allowance_key_capacity(fb_retry_allowance handle, int32_t* out_capacity);
 
 int32_t fb_lock_store_create(fb_lock_store* out_handle);
 void fb_lock_store_destroy(fb_lock_store handle);
