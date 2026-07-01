@@ -84,3 +84,33 @@ suite "metric event helpers":
     check ("limit", "10") in metric.tags
     check ("used", "10") in metric.tags
     check ("remaining", "0") in metric.tags
+
+  test "converts retry allowance decisions and events":
+    let decision = RetryAllowanceResult(
+      allowed: false,
+      key: "s3",
+      limit: 2,
+      originals: 10,
+      retries: 2,
+      remaining: 0,
+      cost: 1,
+      retryAfter: 5.sec,
+      resetAfter: 20.sec
+    )
+    let metric = metricEvent(decision)
+
+    check metric.name == "flowbrigade.retry_allowance.decision"
+    check ("key", "s3") in metric.tags
+    check ("allowed", "false") in metric.tags
+    check ("limit", "2") in metric.tags
+    check ("remaining", "0") in metric.tags
+
+    let eventMetric = metricEvent(RetryAllowanceEvent(
+      kind: retryAllowanceConsume,
+      key: "s3",
+      amount: 1,
+      result: decision
+    ))
+
+    check eventMetric.name == "flowbrigade.retry_allowance.consume"
+    check ("amount", "1") in eventMetric.tags

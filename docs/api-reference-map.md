@@ -108,6 +108,19 @@ API docs, tests, and recipes rather than being duplicated here.
 - `RetryObserverProc` and `RetryEvent`: observe failures, sleeps, exhaustion,
   and success without coupling to a logging library.
 
+## Retry allowance
+
+- `pkg/flowbrigade/retry_allowance`
+- `initRetryAllowance`: keyed allowance for limiting retry storms.
+- `recordOriginal`: record original non-retry work that earns retry allowance.
+- `inspectRetry`: check retry allowance without consuming it.
+- `recordRetry`: check and consume retry allowance.
+- `allowRetry`: boolean convenience wrapper around `recordRetry`.
+- `clear`, `reset`, and `resetAll`: remove retained retry allowance state.
+- `activeKeys`: count retained keys after pruning expired windows.
+- `configuredRetryRatio`, `configuredMinimumRetries`, `configuredPeriod`,
+  `keyCapacity`: inspect allowance configuration.
+
 ## Fallback
 
 - `pkg/flowbrigade/fallback`

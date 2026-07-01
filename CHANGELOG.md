@@ -5,6 +5,10 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+- Added `RetryAllowance` for keyed retry-storm control without sharing API
+  shape or implementation with existing retry budget libraries.
+- Added retry allowance metric conversion and documentation.
+
 ## 0.2.0
 
 - Bumped the core package and Redis adapter package versions to `0.2.0`.

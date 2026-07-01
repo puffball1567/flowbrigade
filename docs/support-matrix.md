@@ -10,6 +10,7 @@ This document defines what is currently supported and what is experimental.
 | Backoff and jitter | Supported |
 | Sync retry | Supported |
 | Async retry | Supported |
+| Retry allowance | Supported |
 | Fallback / try-in-order | Supported |
 | Async fallback / async try-in-order | Supported |
 | Token bucket | Supported |

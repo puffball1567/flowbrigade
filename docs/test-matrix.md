@@ -91,6 +91,27 @@ make gaps visible before adding new features.
 | default async sleep overload | covered |
 | sleep failure | propagated |
 
+## Retry allowance
+
+| Area | Covered |
+| --- | --- |
+| ratio-based retry allowance | covered |
+| minimum retries for low traffic | covered |
+| original work recording | covered |
+| retry inspection without consume | covered |
+| custom retry cost | covered |
+| window reset | covered |
+| per-key isolation | covered |
+| key trimming | covered |
+| blank and control-character keys | rejected |
+| invalid amounts | rejected |
+| invalid configuration | rejected |
+| key capacity | covered |
+| expired key pruning | covered |
+| clear/reset/resetAll | covered |
+| configuration introspection | covered |
+| real time source constructor | covered |
+
 ## Fallback
 
 | Area | Covered |
