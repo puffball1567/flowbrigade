@@ -611,6 +611,18 @@ gcc -Iinclude app.c -L/tmp -lflowbrigade -Wl,-rpath,/tmp -o app
 See [docs/c-abi.md](docs/c-abi.md) for details and
 [docs/spec.md](docs/spec.md) for the language-neutral behavior model.
 
+## Language Bindings
+
+FlowBrigade's C ABI is the supported base for non-Nim bindings.
+
+| Language | Package | Status | Compatibility |
+| --- | --- | --- | --- |
+| Rust | [flowbrigade-rs](https://github.com/puffball1567/flowbrigade-rs) | Experimental | `flowbrigade-rs` v0.1.0 targets FlowBrigade v0.4.0+ and C ABI v2 |
+
+Binding packages are versioned separately from the Nim core package. A binding
+version describes the wrapper API for that language, while the compatibility
+column describes the FlowBrigade core and C ABI versions it expects.
+
 ## Module Layout
 
 Most users can import everything:

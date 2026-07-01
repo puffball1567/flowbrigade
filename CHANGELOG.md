@@ -5,6 +5,11 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+## 0.4.1
+
+- Documented the experimental Rust binding package and its compatibility with
+  FlowBrigade core `0.4.0+` and C ABI version `2`.
+
 ## 0.4.0
 
 - Expanded the experimental C ABI to expose GCRA, keyed GCRA, and
