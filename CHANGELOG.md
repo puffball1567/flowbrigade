@@ -5,6 +5,11 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+- Added in-process GCRA and keyed GCRA rate limiters with inspection, reset,
+  keyed capacity guards, tests, and benchmark coverage.
+- Added intellectual-property review notes for standards-described algorithms
+  such as GCRA.
+
 ## 0.2.0
 
 - Bumped the core package and Redis adapter package versions to `0.2.0`.

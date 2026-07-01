@@ -51,6 +51,11 @@ The core package already includes:
   limiter registry operations, callback-backed stored fixed windows, metrics
   export helpers, and feature checks
 
+## Unreleased
+
+- GCRA and keyed GCRA in-process rate limiters
+- intellectual-property review notes for standards-described algorithms
+
 ## Next Candidates
 
 These are reasonable next areas if they stay small and well-tested:

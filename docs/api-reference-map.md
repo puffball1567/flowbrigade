@@ -129,6 +129,8 @@ API docs, tests, and recipes rather than being duplicated here.
 
 - `pkg/flowbrigade/ratelimit`
 - `initTokenBucket`: burst-friendly limiter with refill.
+- `initGcraLimiter`: GCRA-style limiter based on theoretical arrival time.
+- `initKeyedGcraLimiter`: per-key GCRA-style limiter with key-capacity guards.
 - `initFixedWindow`: simple fixed-period counter.
 - `initSlidingWindow`: weighted previous/current window limiter.
 - `initKeyedFixedWindow`: in-memory per-key fixed window.
@@ -144,7 +146,8 @@ API docs, tests, and recipes rather than being duplicated here.
 - `activeKeys`: count retained keyed fixed-window entries after pruning expired
   windows.
 - `configuredRate`, `configuredLimit`, `configuredPeriod`,
-  `configuredBurst`, `keyCapacity`: inspect local limiter configuration.
+  `configuredBurst`, `configuredInterval`, `keyCapacity`: inspect local
+  limiter configuration.
 - `availableTokens`, `inUse`, `currentWindowUse`: inspect local limiter state.
 - `rateLimitHeaders` and `retryAfterSeconds`: HTTP response metadata helpers.
 - `httpLimitDecision`: framework-neutral HTTP status/body/header data.

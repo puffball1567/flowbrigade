@@ -116,31 +116,32 @@ make gaps visible before adding new features.
 
 ## Rate limiting
 
-| Area | Token bucket | Fixed window | Sliding window | Keyed fixed window |
-| --- | --- | --- | --- | --- |
-| normal allow/deny | covered | covered | covered | covered |
-| refill/reset | covered | covered | covered | covered |
-| boundary before reset | not applicable | covered | covered | covered through reset |
-| custom cost | covered | covered | covered | covered |
-| invalid config | covered | covered | covered | covered |
-| invalid cost | covered | covered | covered | covered |
-| cost above capacity | rejected | rejected | rejected | rejected |
-| real time source constructor | covered | covered | covered | covered |
-| manual time source constructor | covered | covered | covered | covered |
-| result metadata | covered | covered | covered | covered |
-| inspect without consume | covered | covered | covered | covered |
-| retry/reset timing | covered | covered | covered | covered |
-| explicit reset | covered | covered | covered | covered |
-| configuration introspection | covered | covered | covered | covered |
-| local state introspection | covered | covered | covered | covered |
-| independent keys | not applicable | not applicable | not applicable | covered |
-| non-string keys | not applicable | not applicable | not applicable | covered |
-| unsafe string keys | not applicable | not applicable | not applicable | rejected |
-| clear/reset one key | not applicable | not applicable | not applicable | covered |
-| reset all keys | not applicable | not applicable | not applicable | covered |
-| inspect does not retain new keys | not applicable | not applicable | not applicable | covered |
-| max key capacity | not applicable | not applicable | not applicable | covered |
-| expired key pruning | not applicable | not applicable | not applicable | covered |
+| Area | Token bucket | GCRA | Fixed window | Sliding window | Keyed fixed window | Keyed GCRA |
+| --- | --- | --- | --- | --- | --- | --- |
+| normal allow/deny | covered | covered | covered | covered | covered | covered |
+| refill/reset | covered | covered | covered | covered | covered | covered |
+| boundary before reset | not applicable | covered | covered | covered | covered through reset | covered |
+| custom cost | covered | covered | covered | covered | covered | covered |
+| invalid config | covered | covered | covered | covered | covered | covered |
+| invalid cost | covered | covered | covered | covered | covered | covered |
+| cost above capacity | rejected | rejected | rejected | rejected | rejected | rejected |
+| real time source constructor | covered | covered | covered | covered | covered | covered |
+| manual time source constructor | covered | covered | covered | covered | covered | covered |
+| result metadata | covered | covered | covered | covered | covered | covered |
+| inspect without consume | covered | covered | covered | covered | covered | covered |
+| retry/reset timing | covered | covered | covered | covered | covered | covered |
+| explicit reset | covered | covered | covered | covered | covered | covered |
+| configuration introspection | covered | covered | covered | covered | covered | covered |
+| local state introspection | covered | covered | covered | covered | covered | not applicable |
+| fractional interval rounding | not applicable | covered | not applicable | not applicable | not applicable | covered |
+| independent keys | not applicable | not applicable | not applicable | not applicable | covered | covered |
+| non-string keys | not applicable | not applicable | not applicable | not applicable | covered | covered |
+| unsafe string keys | not applicable | not applicable | not applicable | not applicable | rejected | rejected |
+| clear/reset one key | not applicable | not applicable | not applicable | not applicable | covered | covered |
+| reset all keys | not applicable | not applicable | not applicable | not applicable | covered | covered |
+| inspect does not retain new keys | not applicable | not applicable | not applicable | not applicable | covered | covered |
+| max key capacity | not applicable | not applicable | not applicable | not applicable | covered | covered |
+| expired/idle key pruning | not applicable | not applicable | not applicable | not applicable | covered | covered |
 
 ## Compound rate limiting
 

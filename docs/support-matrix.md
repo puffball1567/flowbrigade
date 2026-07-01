@@ -13,6 +13,8 @@ This document defines what is currently supported and what is experimental.
 | Fallback / try-in-order | Supported |
 | Async fallback / async try-in-order | Supported |
 | Token bucket | Supported |
+| GCRA limiter | Supported |
+| Keyed GCRA limiter | Supported |
 | Fixed window | Supported |
 | Sliding window | Supported |
 | Keyed fixed window | Supported |

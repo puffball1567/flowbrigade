@@ -66,6 +66,8 @@ nimble --nimbleDir:/tmp/flowbrigade-nimble --offline --nim:/path/to/nim test
 - New behavior is listed in `docs/test-matrix.md`.
 - Supported and experimental areas are listed in `docs/support-matrix.md`.
 - Compatibility expectations are listed in `docs/api-stability.md`.
+- Standards-described algorithm additions are reflected in `docs/ip-notes.md`
+  when relevant.
 - Experimental C ABI declarations stay synchronized with
   `src/flowbrigade_c.nim`.
 - C ABI ARC build remains covered by `nimble cabi` and an ARC test run.

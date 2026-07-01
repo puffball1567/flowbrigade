@@ -12,6 +12,7 @@ import ./test_retry_async
 
 import ./test_ratelimit_token_bucket
 import ./test_ratelimit_fixed_window
+import ./test_ratelimit_gcra
 import ./test_ratelimit_keyed
 import ./test_ratelimit_results
 import ./test_ratelimit_sliding_window
