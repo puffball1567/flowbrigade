@@ -629,4 +629,3 @@ make gaps visible before adding new features.
 - Jitter tests check ranges, not deterministic seeded values.
 - Async retry does not include a default async sleep helper yet.
 - Timeout and deadline helpers only track time; they do not cancel running work.
-- Benchmarks are documented but not implemented yet.
