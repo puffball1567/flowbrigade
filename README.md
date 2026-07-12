@@ -660,6 +660,15 @@ nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim test
 The explicit `--nim` flag is only needed in environments where Nimble cannot
 discover the active Nim binary.
 
+Run the ARC leak probe with Valgrind:
+
+```sh
+nimble leak
+```
+
+The leak probe builds a release binary under Nim ARC and fails on definite or
+indirect leaks reported by Valgrind.
+
 Check the public entry point:
 
 ```sh

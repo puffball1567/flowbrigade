@@ -53,3 +53,4 @@ import ./test_fallback
 import ./test_fallback_async
 import ./test_integration
 import ./test_c_abi
+import ./test_memory_model

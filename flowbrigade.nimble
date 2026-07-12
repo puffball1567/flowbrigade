@@ -1,4 +1,4 @@
-version       = "0.4.1"
+version       = "0.4.2"
 author        = "flowbrigade contributors"
 description   = "Flow control utilities for Nim."
 license       = "Apache-2.0"
@@ -19,6 +19,10 @@ requires "nim >= 2.2.0"
 
 task test, "Run the test suite":
   exec "nim r --nimcache:/tmp/flowbrigade-nimcache -p:src tests/all.nim"
+
+task leak, "Run the ARC leak probe under Valgrind":
+  exec "nim c -d:release --nimcache:/tmp/flowbrigade-leak-nimcache -p:src --out:/tmp/flowbrigade-leak-probe tests/leak_probe.nim"
+  exec "valgrind --leak-check=full --show-leak-kinds=definite,indirect --errors-for-leak-kinds=definite,indirect --error-exitcode=99 /tmp/flowbrigade-leak-probe"
 
 task benchmark, "Run local benchmark smoke tests":
   exec "nim r --nimcache:/tmp/flowbrigade-nimcache -d:release -p:src benchmarks/core_bench.nim"

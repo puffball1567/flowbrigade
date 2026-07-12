@@ -5,6 +5,13 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+## 0.4.2
+
+- Switched the repository default memory manager to Nim ARC.
+- Added ARC memory-model coverage for common public value lifecycles.
+- Added `nimble leak`, a Valgrind-backed release probe that fails on definite
+  or indirect leaks.
+
 ## 0.4.1
 
 - Documented the experimental Rust binding package and its compatibility with
