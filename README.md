@@ -251,6 +251,11 @@ Available jitter modes:
 - `equalJitter`
 - `decorrelatedJitter`
 
+`decorrelatedJitter` retains the previous delay and chooses the next delay
+between the initial delay and three times the previous delay, capped at
+`maxDelay`. Pass `randomSource` to a backoff constructor when deterministic
+randomness is needed for tests.
+
 ## Retry
 
 Retry runs an operation multiple times until it succeeds or attempts are
@@ -282,6 +287,11 @@ operation more than once is acceptable, especially for side-effecting actions
 such as payments, writes, or email delivery.
 
 Async retry is available as `retryAsync` for operations that return futures.
+Both retry variants accept `shouldRetry(error, attempt)` to reject a retry and
+rethrow immediately. `RetryCancelledError` is not retried by default. Async
+retry also accepts a `RetryObserverProc` and an optional `Deadline`; waiting is
+clamped to the remaining deadline and raises `RetryDeadlineExceededError`
+before another attempt can begin.
 
 For simple blocking usage, `retry` also has an overload that uses FlowBrigade's
 default sleep helper:
@@ -492,7 +502,8 @@ if debouncer.consumeReady():
 ## Circuit Breaker
 
 A circuit breaker stops calling an operation after repeated failures, then lets
-one trial through after a reset delay.
+one trial through after a reset delay. `halfOpenMaxProbes` defaults to one, so
+another caller cannot pass through while that probe is still unresolved.
 
 ```nim
 import std/times

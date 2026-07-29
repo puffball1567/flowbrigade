@@ -37,6 +37,7 @@ type
   CircuitBreakerConfig* = object
     failureThreshold*: int
     resetAfter*: Duration
+    halfOpenMaxProbes*: int
 
 proc ensurePositive(name: string; value: int) =
   if value <= 0:
@@ -90,11 +91,17 @@ proc initBudgetConfig*(limit: int; per: Duration): BudgetConfig =
 
 proc initCircuitBreakerConfig*(
     failureThreshold: int;
-    resetAfter: Duration
+    resetAfter: Duration;
+    halfOpenMaxProbes = 1
 ): CircuitBreakerConfig =
   ensurePositive("failureThreshold", failureThreshold)
   ensurePositive("resetAfter", resetAfter)
-  CircuitBreakerConfig(failureThreshold: failureThreshold, resetAfter: resetAfter)
+  ensurePositive("halfOpenMaxProbes", halfOpenMaxProbes)
+  CircuitBreakerConfig(
+    failureThreshold: failureThreshold,
+    resetAfter: resetAfter,
+    halfOpenMaxProbes: halfOpenMaxProbes
+  )
 
 proc initTokenBucket*(config: TokenBucketConfig): TokenBucket =
   initTokenBucket(rate = config.rate, per = config.per, burst = config.burst)
@@ -118,5 +125,6 @@ proc initBudgetLedger*(config: BudgetConfig): BudgetLedger =
 proc initCircuitBreaker*(config: CircuitBreakerConfig): CircuitBreaker =
   initCircuitBreaker(
     failureThreshold = config.failureThreshold,
-    resetAfter = config.resetAfter
+    resetAfter = config.resetAfter,
+    halfOpenMaxProbes = config.halfOpenMaxProbes
   )

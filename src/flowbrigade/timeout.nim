@@ -51,6 +51,10 @@ proc initDeadline*(after: Duration): Deadline =
 proc expiresAt*(deadline: Deadline): Duration =
   deadline.endsAt
 
+proc isInitialized*(deadline: Deadline): bool =
+  ## Returns whether this value was created by a Deadline constructor.
+  not deadline.timeSource.isNil
+
 proc remaining*(deadline: Deadline): Duration =
   let left = deadline.endsAt - deadline.timeSource.now()
   if left <= initDuration(): initDuration() else: left
