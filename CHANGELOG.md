@@ -5,6 +5,17 @@ work so the first public release has a clear history.
 
 ## Unreleased
 
+## 0.5.0
+
+- Added `shouldRetry(error, attempt)` to synchronous and asynchronous retry,
+  with cancellation errors rejected by default.
+- Added asynchronous retry lifecycle observer events and optional deadline-aware
+  retry waits with `RetryDeadlineExceededError`.
+- Limited circuit-breaker half-open probes to one by default and added
+  configurable `halfOpenMaxProbes`.
+- Implemented stateful decorrelated jitter with injectable randomness for
+  deterministic tests.
+
 ## 0.4.2
 
 - Switched the repository default memory manager to Nim ARC.
