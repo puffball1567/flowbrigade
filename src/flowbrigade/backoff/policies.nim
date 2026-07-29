@@ -5,6 +5,10 @@ import ./jitter
 type
   BackoffError* = object of ValueError
   BackoffConfigError* = object of ValueError
+  RandomIntProc* = proc(upperExclusive: int64): int64 {.closure.}
+
+  DecorrelatedJitterState = ref object
+    previous: Duration
 
   BackoffKind = enum
     bkFixed, bkLinear, bkExponential
@@ -16,6 +20,8 @@ type
     factor: float
     maxDelay: Duration
     jitter: JitterKind
+    randomSource: RandomIntProc
+    decorrelatedState: DecorrelatedJitterState
 
 proc ensurePositive(name: string; value: Duration) =
   if value <= initDuration():
@@ -29,13 +35,21 @@ proc ensureAttempt(attempt: int) =
   if attempt < 1:
     raise newException(BackoffError, "attempt must be at least 1")
 
-proc fixedBackoff*(delay: Duration; jitter = noJitter): BackoffPolicy =
+proc fixedBackoff*(
+    delay: Duration;
+    jitter = noJitter;
+    randomSource: RandomIntProc = nil
+): BackoffPolicy =
   ensurePositive("delay", delay)
-  BackoffPolicy(kind: bkFixed, initial: delay, maxDelay: delay, jitter: jitter)
+  BackoffPolicy(
+    kind: bkFixed, initial: delay, maxDelay: delay, jitter: jitter,
+    randomSource: randomSource, decorrelatedState: DecorrelatedJitterState(previous: delay)
+  )
 
 proc linearBackoff*(
     initial, increment, maxDelay: Duration;
-    jitter = noJitter
+    jitter = noJitter;
+    randomSource: RandomIntProc = nil
 ): BackoffPolicy =
   ensurePositive("initial", initial)
   ensurePositive("increment", increment)
@@ -46,14 +60,17 @@ proc linearBackoff*(
     initial: initial,
     increment: increment,
     maxDelay: maxDelay,
-    jitter: jitter
+    jitter: jitter,
+    randomSource: randomSource,
+    decorrelatedState: DecorrelatedJitterState(previous: initial)
   )
 
 proc expBackoff*(
     initial: Duration;
     factor: float;
     maxDelay: Duration;
-    jitter = noJitter
+    jitter = noJitter;
+    randomSource: RandomIntProc = nil
 ): BackoffPolicy =
   ensurePositive("initial", initial)
   ensurePositive("maxDelay", maxDelay)
@@ -65,7 +82,9 @@ proc expBackoff*(
     initial: initial,
     factor: factor,
     maxDelay: maxDelay,
-    jitter: jitter
+    jitter: jitter,
+    randomSource: randomSource,
+    decorrelatedState: DecorrelatedJitterState(previous: initial)
   )
 
 proc durationFromNanos(nanos: int64): Duration =
@@ -74,12 +93,24 @@ proc durationFromNanos(nanos: int64): Duration =
 proc capDelay(delay, maxDelay: Duration): Duration =
   if delay > maxDelay: maxDelay else: delay
 
-proc randDuration(minDelay, maxDelay: Duration): Duration =
+proc defaultRandomInt(upperExclusive: int64): int64 =
+  if upperExclusive <= 1:
+    return 0
+  rand(upperExclusive - 1)
+
+proc randDuration(policy: BackoffPolicy; minDelay, maxDelay: Duration): Duration =
   let minNanos = minDelay.inNanoseconds
   let maxNanos = maxDelay.inNanoseconds
   if maxNanos <= minNanos:
     return minDelay
-  durationFromNanos(rand(maxNanos - minNanos) + minNanos)
+  let span = maxNanos - minNanos + 1
+  let source = if policy.randomSource.isNil: defaultRandomInt else: policy.randomSource
+  let value = source(span)
+  durationFromNanos(minNanos + max(0'i64, min(value, span - 1)))
+
+proc resetJitter*(policy: BackoffPolicy) =
+  ## Resets the state retained by decorrelated jitter.
+  policy.decorrelatedState.previous = policy.initial
 
 proc baseDelay(policy: BackoffPolicy; attempt: int): Duration =
   case policy.kind
@@ -109,10 +140,16 @@ proc delayFor*(policy: BackoffPolicy; attempt: int): Duration =
   let base = policy.baseDelay(attempt)
   case policy.jitter
   of noJitter:
-    base
+    result = base
   of fullJitter:
-    randDuration(initDuration(), base)
+    result = policy.randDuration(initDuration(), base)
   of equalJitter:
-    randDuration(durationFromNanos(base.inNanoseconds div 2), base)
+    result = policy.randDuration(durationFromNanos(base.inNanoseconds div 2), base)
   of decorrelatedJitter:
-    randDuration(policy.initial, policy.maxDelay)
+    let previous = policy.decorrelatedState.previous
+    let upper = capDelay(
+      durationFromNanos(previous.inNanoseconds * 3),
+      policy.maxDelay
+    )
+    result = policy.randDuration(policy.initial, upper)
+    policy.decorrelatedState.previous = result

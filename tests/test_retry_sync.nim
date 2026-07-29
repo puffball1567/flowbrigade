@@ -222,3 +222,54 @@ suite "sync retry":
         sleep = noSleep,
         operation = operation
       )
+
+  test "rethrows an error when the retry condition rejects it":
+    var attempts = 0
+    var sleeps = 0
+    let policy = fixedBackoff(initDuration(milliseconds = 1))
+
+    proc noSleep(delay: Duration) =
+      discard delay
+      inc sleeps
+
+    proc operation(): int =
+      inc attempts
+      raise newException(IOError, "not retryable")
+
+    proc reject(error: ref CatchableError; attempt: int): bool =
+      discard error
+      discard attempt
+      false
+
+    expect IOError:
+      discard retry(
+        policy = policy,
+        maxAttempts = 3,
+        sleep = noSleep,
+        operation = operation,
+        shouldRetry = reject
+      )
+
+    check attempts == 1
+    check sleeps == 0
+
+  test "does not retry cancellation errors by default":
+    var attempts = 0
+    let policy = fixedBackoff(initDuration(milliseconds = 1))
+
+    proc noSleep(delay: Duration) =
+      discard delay
+
+    proc operation(): int =
+      inc attempts
+      raise newException(RetryCancelledError, "cancelled")
+
+    expect RetryCancelledError:
+      discard retry(
+        policy = policy,
+        maxAttempts = 3,
+        sleep = noSleep,
+        operation = operation
+      )
+
+    check attempts == 1

@@ -45,3 +45,20 @@ suite "backoff jitter":
       let delay = policy.delayFor(attempt)
       check delay >= initDuration(milliseconds = 100)
       check delay <= initDuration(seconds = 2)
+
+  test "decorrelated jitter retains the prior delay and accepts an injected source":
+    proc highest(upperExclusive: int64): int64 =
+      upperExclusive - 1
+
+    let policy = expBackoff(
+      initial = initDuration(milliseconds = 100),
+      factor = 2.0,
+      maxDelay = initDuration(seconds = 2),
+      jitter = decorrelatedJitter,
+      randomSource = highest
+    )
+
+    check policy.delayFor(attempt = 1) == initDuration(milliseconds = 300)
+    check policy.delayFor(attempt = 2) == initDuration(milliseconds = 900)
+    policy.resetJitter()
+    check policy.delayFor(attempt = 1) == initDuration(milliseconds = 300)
