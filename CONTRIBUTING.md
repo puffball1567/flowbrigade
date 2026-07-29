@@ -75,6 +75,34 @@ nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim test
 The explicit `--nim` flag is only needed when Nimble cannot discover the active
 Nim binary.
 
+## Branches and Releases
+
+This repository uses `devel` as the integration branch and `main` as the
+release branch.
+
+- Create a focused work branch from the latest `devel` branch.
+- Open every feature, fix, and documentation pull request against `devel`.
+- Merge pull requests into `devel` only after the required review and CI checks
+  pass.
+- Periodically prepare a release pull request from `devel` to `main`. Do not
+  merge individual feature branches directly into `main`.
+- After that release pull request is merged, create an annotated version tag on
+  the resulting `main` commit and publish the release from that tag.
+
+For example, after updating the changelog and version metadata, a maintainer
+can create a release tag with:
+
+```sh
+git switch main
+git pull --ff-only origin main
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+Protect both `main` and `devel` in the repository settings: require pull
+requests and successful CI, and disallow direct pushes. Set `devel` as the
+default base branch for new pull requests.
+
 ## TDD Workflow
 
 Prefer tests first for new behavior.

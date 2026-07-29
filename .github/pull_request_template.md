@@ -2,6 +2,11 @@
 
 Describe the change.
 
+## Target branch
+
+- [ ] This PR targets `devel`.
+- [ ] This is a release PR from `devel` to `main`.
+
 ## Tests
 
 - [ ] `nim r -p:src tests/all.nim`

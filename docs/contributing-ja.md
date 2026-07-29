@@ -39,6 +39,28 @@ nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim test
 nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim snippets
 ```
 
+## ブランチとリリース
+
+`devel` を統合ブランチ、`main` をリリースブランチとして運用します。
+
+- feature、fix、docs などの作業ブランチは、最新の `devel` から作成する
+- すべての pull request のマージ先は `devel` とする
+- review と CI が通過してから `devel` にマージする
+- 変更がある程度たまったら、`devel` から `main` への release pull request を作成する
+- release pull request のマージ後、`main` のマージコミットに annotated tag を作成してリリースする
+
+リリース時は CHANGELOG とバージョン情報を更新したうえで、次のようにタグを作成します。
+
+```sh
+git switch main
+git pull --ff-only origin main
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+リポジトリ設定では `main` と `devel` の両方を保護し、pull request と CI の成功を必須にします。
+新しい pull request のデフォルトのマージ先は `devel` に設定してください。
+
 ## 範囲外
 
 - public `Clock` API
