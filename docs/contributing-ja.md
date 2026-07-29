@@ -45,7 +45,9 @@ nimble --nimbleDir:/tmp/flowbrigade-nimble --nim:/path/to/nim snippets
 
 - feature、fix、docs などの作業ブランチは、最新の `devel` から作成する
 - すべての pull request のマージ先は `devel` とする
-- review と CI が通過してから `devel` にマージする
+- 最新の push 後に必要な review が通過し、review thread をすべて解決してから
+  `devel` にマージする。CI はすべての pull request で実行するが、Ruleset の
+  マージ必須条件にはしない
 - 変更がある程度たまったら、`devel` から `main` への release pull request を作成する
 - release pull request のマージ後、`main` のマージコミットに annotated tag を作成してリリースする
 
@@ -58,8 +60,9 @@ git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-リポジトリ設定では `main` と `devel` の両方を保護し、pull request と CI の成功を必須にします。
-新しい pull request のデフォルトのマージ先は `devel` に設定してください。
+`main` と `devel` は Ruleset で保護します。削除と force push を禁止し、最新 push 後の
+1 件の承認、review thread の全解決を必須にします。merge、squash、rebase の各方式を
+利用できます。新しい pull request のデフォルトのマージ先は `devel` に設定してください。
 
 ## 範囲外
 
