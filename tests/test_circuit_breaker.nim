@@ -79,6 +79,38 @@ suite "circuit breaker":
     check breaker.state() == circuitOpen
     check not breaker.allow()
 
+  test "allows only one half-open probe until it is recorded":
+    let time = initManualTimeSource()
+    var breaker = initCircuitBreaker(
+      failureThreshold = 1,
+      resetAfter = initDuration(seconds = 5),
+      timeSource = time
+    )
+
+    breaker.recordFailure()
+    time.advance(initDuration(seconds = 5))
+    check breaker.allow()
+    check not breaker.allow()
+
+    breaker.recordFailure()
+    time.advance(initDuration(seconds = 5))
+    check breaker.allow()
+
+  test "can configure the half-open probe limit":
+    let time = initManualTimeSource()
+    var breaker = initCircuitBreaker(
+      failureThreshold = 1,
+      resetAfter = initDuration(seconds = 5),
+      timeSource = time,
+      halfOpenMaxProbes = 2
+    )
+
+    breaker.recordFailure()
+    time.advance(initDuration(seconds = 5))
+    check breaker.allow()
+    check breaker.allow()
+    check not breaker.allow()
+
   test "rejects invalid circuit breaker configuration":
     let time = initManualTimeSource()
 

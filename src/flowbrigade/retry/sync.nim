@@ -15,6 +15,7 @@ type
     error*: ref CatchableError
 
   RetryObserverProc* = proc(event: RetryEvent) {.closure.}
+  RetryConditionProc* = proc(error: ref CatchableError; attempt: int): bool {.closure.}
 
 proc sleepDuration*(delay: Duration) =
   ## Sleeps for a Nim `Duration`, rounding sub-millisecond delays up.
@@ -27,12 +28,18 @@ proc emit(observer: RetryObserverProc; event: RetryEvent) =
   if not observer.isNil:
     observer(event)
 
+proc shouldRetryByDefault*(error: ref CatchableError; attempt: int): bool =
+  ## The default retries ordinary catchable failures but preserves cancellation.
+  discard attempt
+  not (error of RetryCancelledError)
+
 proc retry*[T](
     policy: BackoffPolicy;
     maxAttempts: int;
     sleep: SleepProc;
     operation: proc(): T {.closure.};
-    observer: RetryObserverProc = nil
+    observer: RetryObserverProc = nil;
+    shouldRetry: RetryConditionProc = shouldRetryByDefault
 ): T =
   if maxAttempts < 1:
     raise newException(RetryConfigError, "maxAttempts must be at least 1")
@@ -45,7 +52,7 @@ proc retry*[T](
       return result
     except CatchableError as exc:
       observer.emit(RetryEvent(kind: retryAttemptFailed, attempt: attempt, error: exc))
-      if attempt >= maxAttempts:
+      if not shouldRetry(exc, attempt) or attempt >= maxAttempts:
         observer.emit(RetryEvent(kind: retryExhausted, attempt: attempt, error: exc))
         raise
       let delay = policy.delayFor(attempt)
@@ -59,7 +66,8 @@ proc retry*[T](
     policy: BackoffPolicy;
     maxAttempts: int;
     operation: proc(): T {.closure.};
-    observer: RetryObserverProc = nil
+    observer: RetryObserverProc = nil;
+    shouldRetry: RetryConditionProc = shouldRetryByDefault
 ): T =
   ## Retries an operation using the default blocking sleep implementation.
   retry(
@@ -67,5 +75,6 @@ proc retry*[T](
     maxAttempts = maxAttempts,
     sleep = sleepDuration,
     operation = operation,
-    observer = observer
+    observer = observer,
+    shouldRetry = shouldRetry
   )
