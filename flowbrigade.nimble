@@ -1,4 +1,4 @@
-version       = "0.4.2"
+version       = "0.5.0"
 author        = "flowbrigade contributors"
 description   = "Flow control utilities for Nim."
 license       = "Apache-2.0"
